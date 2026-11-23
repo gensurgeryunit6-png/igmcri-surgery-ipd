@@ -1,1 +1,0 @@
-The login page redirects authenticated users to app.html.
