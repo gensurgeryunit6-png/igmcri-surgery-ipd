@@ -149,6 +149,9 @@ a.bed:hover { border-color: var(--teal); text-decoration: none; }
 /* ---------- login */
 .login-wrap { min-height: 100vh; display: grid; place-items: center; background: var(--navy); padding: 16px; }
 .login { width: 100%; max-width: 400px; background: #fff; border-radius: 10px; padding: 26px; }
+.login .google { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 11px 14px; font-size: 15px; }
+.or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12.5px; }
+.or::before, .or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
 .login .inst { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
 
 /* ---------- print */
