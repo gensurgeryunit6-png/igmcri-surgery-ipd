@@ -46,15 +46,12 @@ export default function CensusPage() {
         Department of General Surgery · {s.unit?.name} · Today&apos;s Inpatient Census · {todayLabel()}
       </div>
       <div className="spread no-print">
-        <div>
-          <h1>Today&apos;s inpatient census</h1>
-          <div className="muted small">{todayLabel()} · {s.unit?.name} · updates live</div>
-        </div>
-        <button className="ghost" onClick={() => window.print()}>Print (A4)</button>
+        <div className="muted small">{todayLabel()} · {s.unit?.name} · updates live</div>
+        <button className="ghost" onClick={() => window.print()}>Print A4</button>
       </div>
       {q.error && <div className="msg err">{q.error}</div>}
 
-      <div className="grid g4">
+      <div className="grid g3">
         {measures.map(([label, n, alert]) => (
           <div key={label} className={`stat ${label === 'Total admitted' ? 'lead' : ''} ${alert && n ? 'alert' : ''}`}>
             <div className="n">{n ?? '–'}</div><div className="l">{label}</div>

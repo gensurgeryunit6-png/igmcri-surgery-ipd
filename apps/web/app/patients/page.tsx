@@ -37,10 +37,7 @@ function Patients() {
 
   return (
     <div className="stack">
-      <div className="spread">
-        <h1>Patient registry</h1>
-        {s.can('patient.write') && !showNew && <button className="teal" onClick={() => setShowNew(true)}>Register new patient</button>}
-      </div>
+      {s.can('patient.write') && !showNew && <button className="teal" onClick={() => setShowNew(true)}>+ Register new patient</button>}
 
       {showNew ? (
         <NewPatient onCancel={() => { setShowNew(false); router.replace('/patients/'); }}
@@ -51,21 +48,14 @@ function Patients() {
           {err && <div className="msg err">{err}</div>}
           {hits && hits.length === 0 && <p className="muted">No patient matches “{q}”.{s.can('patient.write') && <> <a href="#" onClick={(e) => { e.preventDefault(); setShowNew(true); }}>Register a new patient</a>.</>}</p>}
           {hits && hits.length > 0 && (
-            <div className="table-wrap">
-              <table className="t">
-                <thead><tr><th>Name</th><th>UHID</th><th className="hide-mobile">Age / Sex</th><th className="hide-mobile">Phone</th><th>Current admission</th></tr></thead>
-                <tbody>
-                  {hits.map((h) => (
-                    <tr key={h.id}>
-                      <td><Link href={`/patient/?id=${h.id}`}><b>{h.full_name}</b></Link></td>
-                      <td>{h.uhid}</td>
-                      <td className="hide-mobile">{ageSex(h.age_years, h.sex)}</td>
-                      <td className="hide-mobile">{h.phone ?? '—'}</td>
-                      <td>{h.active_admission_id ? <span className="badge teal">IP {h.ip_number} · {h.bed ?? 'no bed'}</span> : <span className="muted small">Not admitted</span>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="mobile-list">
+              {hits.map((h) => (
+                <Link key={h.id} href={`/patient/?id=${h.id}`} className="mcard">
+                  <div className="spread"><b>{h.full_name}</b><span className="muted small">{ageSex(h.age_years, h.sex)}</span></div>
+                  <div className="muted small">UHID {h.uhid}{h.phone ? ` · ${h.phone}` : ''}</div>
+                  <div style={{ marginTop: 4 }}>{h.active_admission_id ? <span className="badge teal">Admitted · IP {h.ip_number} · {h.bed ?? 'no bed'}</span> : <span className="muted small">Not admitted</span>}</div>
+                </Link>
+              ))}
             </div>
           )}
           {!hits && <p className="muted small">Start typing to search. Every patient has one record, linked to all their admissions.</p>}

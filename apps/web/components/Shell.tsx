@@ -4,23 +4,21 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useSession } from '@/lib/session';
 import { supabase, friendlyError } from '@/lib/supabase';
+import { Icon } from './Icon';
 
-const NAV = [
-  { href: '/', label: 'Dashboard', short: 'Home' },
-  { href: '/census/', label: "Today's census", short: 'Census' },
-  { href: '/wards/', label: 'Ward board', short: 'Wards' },
-  { href: '/patients/', label: 'Patient registry', short: 'Patients' },
-  { href: '/users/', label: 'Users and roles', short: 'Users', perm: 'users.manage' },
-  { href: '/account/', label: 'My account', short: 'Me' },
+// Title shown in the app bar for each screen.
+const TITLES: [string, string][] = [
+  ['/census', "Today's census"], ['/wards', 'Ward board'], ['/patients', 'Patients'], ['/patient', 'Patient'],
+  ['/users', 'Users and roles'], ['/account', 'My account'],
 ];
-
-const PUBLIC_PATHS = ['/login/', '/reset/'];
+const PUBLIC_PATHS = ['/login', '/reset'];
 
 export function Shell({ children }: { children: ReactNode }) {
   const s = useSession();
-  const path = usePathname() || '/';
+  const path = (usePathname() || '/').replace(/\/$/, '') || '/';
   const router = useRouter();
-  const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p.slice(0, -1)));
+  const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p));
+  const isHome = path === '/';
 
   useEffect(() => {
     if (!s.loading && !s.session && !isPublic) router.replace('/login/');
@@ -30,54 +28,31 @@ export function Shell({ children }: { children: ReactNode }) {
   if (s.loading || !s.session) return <div className="login-wrap"><div style={{ color: '#fff' }}>Loading…</div></div>;
   if (!s.staff) return <ProfileSetup />;
 
-  const items = NAV.filter((n) => !n.perm || s.can(n.perm));
-  const on = (href: string) => (href === '/' ? path === '/' : path.startsWith(href.slice(0, -1)));
+  const title = TITLES.find(([p]) => path.startsWith(p))?.[1] ?? 'Surgery Unit OS';
 
   return (
-    <div className="shell">
-      <aside className="side">
-        <div className="brand">
-          <b>SURGERY UNIT OS</b>
-          <span>IGMCRI · General Surgery · {s.unit?.name ?? 'No unit'}</span>
+    <div className="app">
+      <header className="appbar">
+        {isHome ? (
+          <div className="appbar-brand">
+            <b>SURGERY UNIT OS</b>
+            <span>IGMCRI · General Surgery · {s.unit?.name ?? ''}</span>
+          </div>
+        ) : (
+          <>
+            <button className="icon-btn" onClick={() => router.back()} aria-label="Back"><Icon name="back" /></button>
+            <h1 className="appbar-title">{title}</h1>
+          </>
+        )}
+        <div className="appbar-actions">
+          {!path.startsWith('/patients') && <Link className="icon-btn" href="/patients/" aria-label="Search patients"><Icon name="search" /></Link>}
+          {!isHome && <Link className="icon-btn home" href="/" aria-label="Home"><Icon name="home" /></Link>}
+          {isHome && <Link className="icon-btn" href="/account/" aria-label="My account"><Icon name="user" /></Link>}
         </div>
-        <nav className="nav">
-          {items.map((n) => <Link key={n.href} href={n.href} className={on(n.href) ? 'on' : ''}>{n.label}</Link>)}
-        </nav>
-        <div className="side-foot">
-          <div>{s.staff.full_name}</div>
-          <div style={{ opacity: .7 }}>{s.roles.map(roleName).join(', ') || 'No role yet'}</div>
-          {s.units.length > 1 && (
-            <select value={s.unit?.id} onChange={(e) => s.setUnit(e.target.value)} style={{ marginTop: 8, fontSize: 12, padding: 4 }}>
-              {s.units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
-          )}
-          <button onClick={() => supabase.auth.signOut()}>Sign out</button>
-        </div>
-      </aside>
-      <div className="main">
-        <TopSearch />
-        <main className="content">
-          {!s.unit ? <NoRole /> : children}
-        </main>
-      </div>
-      <nav className="bottom-nav">
-        {items.filter((n) => !n.perm && n.href !== '/account/').map((n) => <Link key={n.href} href={n.href} className={on(n.href) ? 'on' : ''}>{n.short}</Link>)}
-        <Link href="/account/" className={on('/account/') ? 'on' : ''}>Me</Link>
-      </nav>
-    </div>
-  );
-}
-
-function TopSearch() {
-  const router = useRouter();
-  const [q, setQ] = useState('');
-  const go = (e: FormEvent) => { e.preventDefault(); if (q.trim()) router.push(`/patients/?q=${encodeURIComponent(q.trim())}`); };
-  return (
-    <div className="topbar">
-      <b className="hide-mobile" style={{ color: 'var(--navy)', fontSize: 14 }}>Search</b>
-      <form onSubmit={go}>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, UHID, IP number or phone" aria-label="Search patients" />
-      </form>
+      </header>
+      <main className="screen">
+        {!s.unit ? <NoRole /> : children}
+      </main>
     </div>
   );
 }
@@ -90,11 +65,11 @@ export function roleName(code: string) {
 function NoRole() {
   const s = useSession();
   return (
-    <div className="card stack" style={{ maxWidth: 560 }}>
-      <h1>Waiting for access</h1>
+    <div className="card stack">
+      <h2>Waiting for access</h2>
       <p>Your account ({s.session?.user.email}) is set up, but you have not been given a role in any unit yet.</p>
       <p className="muted">Ask the unit administrator to add you under <b>Users and roles</b>. Patient records stay hidden until then.</p>
-      <div><button className="ghost" onClick={() => s.refresh()}>Check again</button> <button className="ghost" onClick={() => supabase.auth.signOut()}>Sign out</button></div>
+      <div className="row"><button className="ghost" onClick={() => s.refresh()}>Check again</button><button className="ghost" onClick={() => supabase.auth.signOut()}>Sign out</button></div>
     </div>
   );
 }

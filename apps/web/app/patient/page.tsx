@@ -25,6 +25,7 @@ function PatientView() {
   const [adms, setAdms] = useState<Admission[]>([]);
   const [err, setErr] = useState('');
   const [editing, setEditing] = useState(false);
+  const [tab, setTab] = useState('admission');
 
   const load = useCallback(async () => {
     const [pp, aa] = await Promise.all([
@@ -46,7 +47,7 @@ function PatientView() {
       <div className="card">
         <div className="spread">
           <div>
-            <h1>{p.full_name}</h1>
+            <h2 style={{ fontSize: 20, margin: 0 }}>{p.full_name}</h2>
             <div className="row small" style={{ gap: 14 }}>
               <span>UHID <b>{p.uhid}</b></span><span>{ageSex(p.age_years, p.sex)}</span>
               {p.blood_group && <span>Blood group {p.blood_group}</span>}{p.phone && <span>{p.phone}</span>}
@@ -64,26 +65,41 @@ function PatientView() {
         )}
       </div>
 
-      {active ? <ActiveAdmission a={active} patient={p} onChange={load} />
-        : s.can('ipd.write') ? <AdmitForm patientId={p.id} onDone={load} />
-        : <div className="card muted">Not currently admitted.</div>}
-
-      <div className="card">
-        <h2>Admission history</h2>
-        {adms.length === 0 ? <p className="muted small">No admissions yet.</p> : (
-          <div className="table-wrap"><table className="t">
-            <thead><tr><th>IP number</th><th>Admitted</th><th>Type</th><th>Status</th><th>Discharged</th><th className="hide-mobile">Consultant</th></tr></thead>
-            <tbody>{adms.map((a) => (
-              <tr key={a.id}><td>{a.ip_number}</td><td>{fmtDate(a.admitted_at)}</td><td>{a.admission_type}</td>
-                <td><span className={`badge ${a.status === 'admitted' ? 'teal' : ''}`}>{a.status}</span></td>
-                <td>{fmtDate(a.discharged_at)}</td><td className="hide-mobile">{a.consultant?.full_name ?? '—'}</td></tr>
-            ))}</tbody>
-          </table></div>
-        )}
+      <div className="tabs">
+        {TABS.filter((t) => active || ['admission', 'history'].includes(t.key)).map((t) => (
+          <button key={t.key} className={tab === t.key ? 'on' : ''} onClick={() => setTab(t.key)}>{t.label}</button>
+        ))}
       </div>
+
+      {tab === 'admission' && (active ? <ActiveAdmission a={active} onChange={load} />
+        : s.can('ipd.write') ? <AdmitForm patientId={p.id} onDone={load} />
+        : <div className="card muted">Not currently admitted.</div>)}
+      {active && tab === 'diagnosis' && <Diagnoses admissionId={active.id} />}
+      {active && tab === 'surgery' && <Surgeries admissionId={active.id} patientId={p.id} />}
+      {active && tab === 'tests' && <Investigations admissionId={active.id} />}
+      {active && tab === 'medicines' && <Medications admissionId={active.id} />}
+      {active && tab === 'rounds' && <Rounds admissionId={active.id} />}
+      {tab === 'history' && (
+        <div className="card">
+          <h3>Admission history</h3>
+          {adms.length === 0 ? <p className="muted small">No admissions yet.</p> : adms.map((a) => (
+            <div key={a.id} className="spread small" style={{ borderBottom: '1px solid #edf0f4', padding: '8px 0' }}>
+              <span><b>IP {a.ip_number}</b> · {fmtDate(a.admitted_at)} → {a.discharged_at ? fmtDate(a.discharged_at) : 'now'}
+                <span className="muted"> · {a.admission_type}{a.consultant ? ` · ${a.consultant.full_name}` : ''}</span></span>
+              <span className={`badge ${a.status === 'admitted' ? 'teal' : ''}`}>{a.status}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
+
+const TABS = [
+  { key: 'admission', label: 'Admission' }, { key: 'diagnosis', label: 'Diagnosis' }, { key: 'surgery', label: 'Surgery' },
+  { key: 'tests', label: 'Investigations' }, { key: 'medicines', label: 'Medicines' }, { key: 'rounds', label: 'Ward rounds' },
+  { key: 'history', label: 'History' },
+];
 
 // ---------------------------------------------------------------- edit patient
 function EditPatient({ p, onDone }: { p: Patient; onDone: () => void }) {
@@ -171,7 +187,7 @@ function AdmitForm({ patientId, onDone }: { patientId: string; onDone: () => voi
 }
 
 // ---------------------------------------------------------------- active admission
-function ActiveAdmission({ a, patient, onChange }: { a: Admission; patient: Patient; onChange: () => void }) {
+function ActiveAdmission({ a, onChange }: { a: Admission; onChange: () => void }) {
   const s = useSession();
   const [bed, setBed] = useState<{ label: string; ward: string } | null>(null);
   const [mode, setMode] = useState<'' | 'move' | 'discharge'>('');
@@ -246,15 +262,6 @@ function ActiveAdmission({ a, patient, onChange }: { a: Admission; patient: Pati
         {err && <div className="msg err">{err}</div>}
       </div>
 
-      <div className="grid g2">
-        <Diagnoses admissionId={a.id} />
-        <Surgeries admissionId={a.id} patientId={patient.id} />
-      </div>
-      <div className="grid g2">
-        <Investigations admissionId={a.id} />
-        <Medications admissionId={a.id} />
-      </div>
-      <Rounds admissionId={a.id} />
     </div>
   );
 }
@@ -416,7 +423,7 @@ function Rounds({ admissionId }: { admissionId: string }) {
   const { rows } = usePanel<Row>('ward_round_entries', admissionId, '*, author:staff!ward_round_entries_entered_by_fkey(full_name)', 'round_at');
   return (
     <div className="card stack">
-      <div className="spread"><h3 style={{ margin: 0 }}>Ward rounds</h3><span className="muted small">Round entry screens arrive in Phase 4</span></div>
+      <div className="spread"><h3 style={{ margin: 0 }}>Ward rounds</h3><span className="muted small">Entry screens: Phase 4</span></div>
       {rows.length === 0 ? <p className="muted small">No ward-round entries yet.</p> : rows.map((r) => (
         <div key={r.id} className="small" style={{ borderBottom: '1px solid #edf0f4', paddingBottom: 6 }}>
           <div className="spread"><span><b>{fmtDateTime(r.round_at)}</b> · {r.round_type}{r.postop_day != null && ` · POD ${r.postop_day}`} · {r.author?.full_name}</span>

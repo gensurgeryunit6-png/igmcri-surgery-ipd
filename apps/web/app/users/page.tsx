@@ -45,7 +45,7 @@ export default function UsersPage() {
 
   return (
     <div className="stack">
-      <h1>Users and roles · {s.unit?.name}</h1>
+      <div className="muted small">{s.unit?.name}</div>
       <div className="card stack">
         <h2>Give someone access</h2>
         <p className="muted small" style={{ margin: 0 }}>They first create an account in the app and fill in their profile. Then add their email here with a role.</p>

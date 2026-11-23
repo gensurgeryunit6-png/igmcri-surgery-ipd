@@ -2,81 +2,64 @@
 import Link from 'next/link';
 import { useSession } from '@/lib/session';
 import { supabase } from '@/lib/supabase';
-import { useLive, must, LIVE_TABLES, type Census, type Inpatient } from '@/lib/data';
+import { useLive, must, LIVE_TABLES, type Census } from '@/lib/data';
 import { todayLabel } from '@/lib/format';
-import { StatusBadge } from '@/components/ui';
+import { Icon } from '@/components/Icon';
 
-export default function Dashboard() {
+type Tile = { href: string; label: string; icon: string; perm?: string; soon?: string };
+
+const TILES: Tile[] = [
+  { href: '/census/', label: "Today's census", icon: 'census' },
+  { href: '/wards/', label: 'Ward board', icon: 'bed' },
+  { href: '/patients/', label: 'Patients', icon: 'patients' },
+  { href: '/patients/?new=1', label: 'Register patient', icon: 'addUser', perm: 'patient.write' },
+  { href: '#', label: 'Ward rounds', icon: 'rounds', soon: 'Phase 4' },
+  { href: '#', label: 'Major OT', icon: 'ot', soon: 'Phase 5' },
+  { href: '#', label: 'Minor OT', icon: 'minor', soon: 'Phase 5' },
+  { href: '#', label: 'Endoscopy', icon: 'scope', soon: 'Phase 6' },
+  { href: '#', label: 'OPD', icon: 'opd', soon: 'Phase 7' },
+  { href: '#', label: 'Reports', icon: 'reports', soon: 'Phase 8' },
+  { href: '/users/', label: 'Users and roles', icon: 'team', perm: 'users.manage' },
+  { href: '/account/', label: 'My account', icon: 'user' },
+];
+
+export default function Home() {
   const s = useSession();
   const unitId = s.unit?.id;
   const census = useLive(async () =>
     must(supabase.from('v_census_today').select('*').eq('unit_id', unitId!).maybeSingle()) as Promise<Census | null>,
     LIVE_TABLES, [unitId]);
-  const watch = useLive(async () =>
-    must(supabase.from('v_inpatients').select('admission_id, patient_id, full_name, uhid, ip_number, ward, bed, last_status, rounds_today, postop_day, diagnosis')
-      .eq('unit_id', unitId!).order('ward_sort').order('bed_sort')) as Promise<Inpatient[]>,
-    LIVE_TABLES, [unitId]);
-
   const c = census.data;
-  const critical = (watch.data ?? []).filter((p) => p.last_status === 'critical' || p.last_status === 'worsening');
-  const noRound = (watch.data ?? []).filter((p) => p.rounds_today === 0);
 
   return (
     <div className="stack">
-      <div className="spread">
-        <div>
-          <h1>Good {greeting()}, {displayName(s.staff?.full_name)}</h1>
-          <div className="muted small">{todayLabel()} · {s.unit?.name}</div>
-        </div>
-        <div className="row">
-          {s.can('patient.write') && <Link className="btn teal" href="/patients/?new=1">Register patient</Link>}
-          <Link className="btn ghost" href="/census/">Full census</Link>
-        </div>
+      <div>
+        <h2 style={{ margin: 0, fontSize: 20 }}>Good {greeting()}, {displayName(s.staff?.full_name)}</h2>
+        <div className="muted small">{todayLabel()}</div>
       </div>
 
+      <Link href="/census/" className="today">
+        <div><b>{c?.total_admitted ?? '–'}</b><span>Admitted</span></div>
+        <div className={c?.rounds_pending ? 'alert' : ''}><b>{c?.rounds_pending ?? '–'}</b><span>Rounds pending</span></div>
+        <div className={c?.critical ? 'alert' : ''}><b>{c?.critical ?? '–'}</b><span>Critical</span></div>
+        <div><b>{c?.awaiting_surgery ?? '–'}</b><span>Awaiting surgery</span></div>
+      </Link>
       {census.error && <div className="msg err">{census.error}</div>}
-      <div className="grid g4">
-        <Link className="stat lead" href="/census/"><div className="n">{c?.total_admitted ?? '–'}</div><div className="l">Patients admitted</div></Link>
-        <Link className={`stat ${c?.rounds_pending ? 'alert' : ''}`} href="/wards/"><div className="n">{c?.rounds_pending ?? '–'}</div><div className="l">Rounds not yet done today</div></Link>
-        <div className={`stat ${c?.critical ? 'alert' : ''}`}><div className="n">{c?.critical ?? '–'}</div><div className="l">Critical</div></div>
-        <div className="stat"><div className="n">{c?.new_admissions ?? '–'}</div><div className="l">New admissions today</div></div>
-      </div>
-      <div className="grid g4">
-        <div className="stat"><div className="n">{c?.postoperative ?? '–'}</div><div className="l">Postoperative</div></div>
-        <div className="stat"><div className="n">{c?.awaiting_surgery ?? '–'}</div><div className="l">Awaiting surgery</div></div>
-        <div className="stat"><div className="n">{c?.planned_discharge ?? '–'}</div><div className="l">Planned for discharge</div></div>
-        <div className="stat"><div className="n">{c?.discharged_today ?? '–'}</div><div className="l">Discharged today</div></div>
-      </div>
 
-      <div className="grid g2">
-        <div className="card">
-          <h2>Critical or worsening</h2>
-          {critical.length === 0 ? <p className="muted small">None recorded in the latest rounds.</p> :
-            <PatientList rows={critical} />}
-        </div>
-        <div className="card">
-          <div className="spread"><h2>No round recorded today</h2><Link className="small" href="/wards/">Ward board →</Link></div>
-          {noRound.length === 0 ? <p className="muted small">{watch.data?.length ? 'Every patient has a round entry today.' : 'No admitted patients.'}</p> :
-            <PatientList rows={noRound.slice(0, 12)} more={noRound.length - 12} />}
-        </div>
+      <div className="launcher">
+        {TILES.filter((t) => !t.perm || s.can(t.perm)).map((t) => t.soon ? (
+          <div key={t.label} className="tile soon" title={`Coming in ${t.soon}`}>
+            <span className="tile-icon"><Icon name={t.icon} size={28} /></span>
+            <span className="tile-label">{t.label}</span>
+            <span className="tile-soon">{t.soon}</span>
+          </div>
+        ) : (
+          <Link key={t.label} href={t.href} className="tile">
+            <span className="tile-icon"><Icon name={t.icon} size={28} /></span>
+            <span className="tile-label">{t.label}</span>
+          </Link>
+        ))}
       </div>
-    </div>
-  );
-}
-
-function PatientList({ rows, more = 0 }: { rows: Inpatient[]; more?: number }) {
-  return (
-    <div className="stack" style={{ gap: 6 }}>
-      {rows.map((p) => (
-        <Link key={p.admission_id} href={`/patient/?id=${p.patient_id}`} className="spread" style={{ color: 'inherit', borderBottom: '1px solid #edf0f4', paddingBottom: 6 }}>
-          <span><b>{p.bed ?? 'No bed'}</b> · {p.full_name} <span className="muted small">IP {p.ip_number}</span></span>
-          <span className="row" style={{ gap: 6 }}>
-            {p.postop_day != null && <span className="badge teal">POD {p.postop_day}</span>}
-            {p.last_status && <StatusBadge s={p.last_status} />}
-          </span>
-        </Link>
-      ))}
-      {more > 0 && <span className="muted small">and {more} more</span>}
     </div>
   );
 }

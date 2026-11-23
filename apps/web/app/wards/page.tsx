@@ -9,7 +9,7 @@ import { todayLabel, STATUS_LABEL } from '@/lib/format';
 export default function WardBoard() {
   const s = useSession();
   const unitId = s.unit?.id;
-  const [only, setOnly] = useState<string>('all');
+  const [pick, setPick] = useState<string>('');
   const q = useLive(async () => {
     const [w, b, p] = await Promise.all([
       must(supabase.from('wards').select('id, code, name, kind, sort_order').eq('unit_id', unitId!).eq('active', true).order('sort_order')),
@@ -20,17 +20,19 @@ export default function WardBoard() {
   }, LIVE_TABLES, [unitId]);
 
   const byBed = new Map((q.data?.pts ?? []).filter((p) => p.bed_id).map((p) => [p.bed_id!, p]));
+  const only = pick || q.data?.wards[0]?.id || '';
   const wards = (q.data?.wards ?? []).filter((w) => only === 'all' || w.id === only);
 
   return (
     <div className="stack">
-      <div className="spread">
-        <div><h1>Ward board</h1><div className="muted small">{todayLabel()} · amber line = no round yet today · red edge = critical</div></div>
-        <select value={only} onChange={(e) => setOnly(e.target.value)} style={{ width: 'auto' }}>
-          <option value="all">All wards</option>
-          {(q.data?.wards ?? []).map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-        </select>
+      <div className="tabs">
+        {(q.data?.wards ?? []).map((w) => {
+          const n = (q.data?.pts ?? []).filter((p) => p.ward_id === w.id).length;
+          return <button key={w.id} className={only === w.id ? 'on' : ''} onClick={() => setPick(w.id)}>{w.name.replace(' Surgical Ward', ' ward').replace(' / Other beds', '')} · {n}</button>;
+        })}
+        <button className={only === 'all' ? 'on' : ''} onClick={() => setPick('all')}>All</button>
       </div>
+      <div className="muted small">{todayLabel()} · amber line = no round yet today · red edge = critical</div>
       {q.error && <div className="msg err">{q.error}</div>}
       {wards.map((w) => {
         const beds = (q.data?.beds ?? []).filter((b) => b.ward_id === w.id);

@@ -7,8 +7,7 @@ import { roleName } from '@/components/Shell';
 export default function AccountPage() {
   const s = useSession();
   return (
-    <div className="stack" style={{ maxWidth: 560 }}>
-      <h1>My account</h1>
+    <div className="stack">
       <div className="card stack">
         <div><label>Name</label>{s.staff?.full_name}</div>
         <div><label>Designation</label>{s.staff?.designation ?? '—'}</div>
