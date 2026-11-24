@@ -6,7 +6,22 @@ import { roleName } from '@/components/Shell';
 
 type Member = { id: string; user_id: string; role_code: string; active: boolean };
 type StaffRow = { user_id: string; full_name: string; designation: string | null; email: string | null; active: boolean };
-const ROLES = ['unit_chief', 'faculty', 'senior_resident', 'postgraduate', 'staff_nurse', 'data_entry', 'admin'];
+const ROLES = ['unit_chief', 'faculty', 'senior_resident', 'postgraduate', 'intern', 'staff_nurse', 'data_entry', 'admin'];
+
+// [action, intern, PG/SR, faculty, unit chief] — mirrors role_permissions in the database.
+const ACCESS: [string, boolean, boolean, boolean, boolean][] = [
+  ['View patients, census, ward board', true, true, true, true],
+  ['Register patients', true, true, true, true],
+  ['Write ward-round notes', true, true, true, true],
+  ['Admit, move beds, order tests, medicines', false, true, true, true],
+  ['Amend a round (with reason)', false, true, true, true],
+  ['Prepare OT lists', false, true, true, true],
+  ['Discharge (Senior Residents yes, PGs no)', false, false, true, true],
+  ['Verify rounds and surgery dates', false, false, true, true],
+  ['Approve OT lists', false, false, true, true],
+  ['Publish OT lists', false, false, false, true],
+  ['View audit log', false, false, false, true],
+];
 
 export default function UsersPage() {
   const s = useSession();
@@ -84,6 +99,17 @@ export default function UsersPage() {
           </tbody>
         </table>
       </div>
+      <details className="card small">
+        <summary style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--navy)' }}>What each role can do</summary>
+        <div className="table-wrap" style={{ marginTop: 10 }}>
+          <table className="t">
+            <thead><tr><th></th><th>Intern</th><th>PG / SR</th><th>Faculty</th><th>Unit Chief</th></tr></thead>
+            <tbody>
+              {ACCESS.map(([what, ...v]) => <tr key={what}><td>{what}</td>{v.map((x, i) => <td key={i} style={{ color: x ? 'var(--ok)' : 'var(--muted)' }}>{x ? 'Yes' : '—'}</td>)}</tr>)}
+            </tbody>
+          </table>
+        </div>
+      </details>
       <p className="muted small">Every change here is recorded in the audit log. Admins cannot remove their own admin role, so a unit is never left without one.</p>
     </div>
   );

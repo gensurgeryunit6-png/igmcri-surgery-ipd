@@ -58,7 +58,7 @@ export function Shell({ children }: { children: ReactNode }) {
 }
 
 export function roleName(code: string) {
-  return ({ unit_chief: 'Unit Chief', faculty: 'Faculty', senior_resident: 'Senior Resident', postgraduate: 'Postgraduate',
+  return ({ unit_chief: 'Unit Chief', faculty: 'Faculty', senior_resident: 'Senior Resident', postgraduate: 'Postgraduate', intern: 'Intern',
     staff_nurse: 'Staff Nurse', data_entry: 'Data Entry', admin: 'Administrator' } as Record<string, string>)[code] ?? code;
 }
 
