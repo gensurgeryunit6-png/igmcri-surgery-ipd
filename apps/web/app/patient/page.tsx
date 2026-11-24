@@ -423,7 +423,7 @@ function Rounds({ admissionId }: { admissionId: string }) {
   const { rows } = usePanel<Row>('ward_round_entries', admissionId, '*, author:staff!ward_round_entries_entered_by_fkey(full_name)', 'round_at');
   return (
     <div className="card stack">
-      <div className="spread"><h3 style={{ margin: 0 }}>Ward rounds</h3><span className="muted small">Entry screens: Phase 4</span></div>
+      <div className="spread"><h3 style={{ margin: 0 }}>Ward rounds</h3><Link className="btn teal" style={{ padding: '6px 12px' }} href={`/round/?a=${admissionId}`}>Open rounds</Link></div>
       {rows.length === 0 ? <p className="muted small">No ward-round entries yet.</p> : rows.map((r) => (
         <div key={r.id} className="small" style={{ borderBottom: '1px solid #edf0f4', paddingBottom: 6 }}>
           <div className="spread"><span><b>{fmtDateTime(r.round_at)}</b> · {r.round_type}{r.postop_day != null && ` · POD ${r.postop_day}`} · {r.author?.full_name}</span>

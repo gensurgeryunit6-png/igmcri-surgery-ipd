@@ -8,6 +8,7 @@ import { Icon } from './Icon';
 
 // Title shown in the app bar for each screen.
 const TITLES: [string, string][] = [
+  ['/rounds', 'Ward rounds'], ['/round', 'Ward round'], ['/verify', 'Verify rounds'], ['/reports', 'Daily reports'],
   ['/census', "Today's census"], ['/wards', 'Ward board'], ['/patients', 'Patients'], ['/patient', 'Patient'],
   ['/users', 'Users and roles'], ['/account', 'My account'],
 ];
@@ -58,7 +59,7 @@ export function Shell({ children }: { children: ReactNode }) {
 }
 
 export function roleName(code: string) {
-  return ({ unit_chief: 'Unit Chief', faculty: 'Faculty', senior_resident: 'Senior Resident', postgraduate: 'Postgraduate',
+  return ({ unit_chief: 'Unit Chief', faculty: 'Faculty', senior_resident: 'Senior Resident', postgraduate: 'Postgraduate', intern: 'Intern',
     staff_nurse: 'Staff Nurse', data_entry: 'Data Entry', admin: 'Administrator' } as Record<string, string>)[code] ?? code;
 }
 
