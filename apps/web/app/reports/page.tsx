@@ -4,7 +4,8 @@ import { useSession } from '@/lib/session';
 import { supabase, friendlyError } from '@/lib/supabase';
 import type { Ward } from '@/lib/data';
 import { REPORTS, buildReport, downloadXlsx, type Report, type ReportKind } from '@/lib/reports';
-import { fmtDateTime } from '@/lib/format';
+import { ReportView } from '@/components/ReportView';
+import Link from 'next/link';
 
 export default function ReportsPage() {
   const s = useSession();
@@ -60,6 +61,7 @@ export default function ReportsPage() {
           )}
         </div>
         <button className="teal" disabled={busy} onClick={generate}>{busy ? 'Preparing…' : 'Show report'}</button>
+        <Link href="/saved-reports/" className="small">Saved morning reports →</Link>
         {err && <div className="msg err">{err}</div>}
       </div>
 
@@ -69,31 +71,7 @@ export default function ReportsPage() {
             <button onClick={() => { log('print'); window.print(); }}>Print or save as PDF</button>
             <button className="ghost" onClick={() => { log('xlsx'); downloadXlsx(report, `${kind}-report-${date}.xlsx`); }}>Download Excel</button>
           </div>
-          <div className="report">
-            <div className="letterhead">
-              <b>INDIRA GANDHI MEDICAL COLLEGE &amp; RESEARCH INSTITUTE, PUDUCHERRY</b>
-              <span>Department of General Surgery · {s.unit?.name}</span>
-              <h2>{report.title}</h2>
-              <span>{report.subtitle}</span>
-            </div>
-            {report.sections.map((sec, i) => (
-              <section key={i} className="report-section">
-                <h3>{sec.heading}</h3>
-                {sec.rows.length === 0 ? <p className="muted small">None.</p> : (
-                  <div className="table-wrap">
-                    <table className="t report-table">
-                      <thead><tr>{sec.columns.map((c) => <th key={c}>{c}</th>)}</tr></thead>
-                      <tbody>{sec.rows.map((row, j) => (
-                        <tr key={j}>{row.map((cell, k) => <td key={k} className={cell === 'NO ROUND RECORDED' ? 'missing' : ''}>{cell}</td>)}</tr>
-                      ))}</tbody>
-                    </table>
-                  </div>
-                )}
-                {sec.note && <p className="small muted">{sec.note}</p>}
-              </section>
-            ))}
-            <div className="report-foot">Generated {fmtDateTime(made)} by {s.staff?.full_name} · Surgery Unit OS · Confidential patient information — for authorised unit staff only.</div>
-          </div>
+          <ReportView report={report} made={made} />
         </>
       )}
     </div>

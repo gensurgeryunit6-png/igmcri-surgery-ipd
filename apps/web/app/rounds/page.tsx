@@ -25,9 +25,9 @@ export default function RoundsPage() {
 
   const wards = q.data?.wards ?? [];
   const all = q.data?.pts ?? [];
-  const ward = pick || wards.find((w) => all.some((p) => p.ward_id === w.id))?.id || wards[0]?.id || '';
+  const ward = pick || 'all';
   const list = all
-    .filter((p) => (ward === 'none' ? !p.ward_id : p.ward_id === ward))
+    .filter((p) => (ward === 'all' ? true : ward === 'none' ? !p.ward_id : p.ward_id === ward))
     .filter((p) => !mineOnly || p.assigned_pg_id === me);
   const pending = list.filter((p) => p.rounds_today === 0);
   const firstPending = pending[0];
@@ -43,6 +43,7 @@ export default function RoundsPage() {
       </div>
 
       <div className="tabs">
+        <button className={ward === 'all' ? 'on' : ''} onClick={() => setPick('all')}>All wards {all.filter((p) => !p.rounds_today).length ? `· ${all.filter((p) => !p.rounds_today).length} due` : '· done'}</button>
         {wards.map((w) => {
           const inWard = all.filter((p) => p.ward_id === w.id);
           const left = inWard.filter((p) => p.rounds_today === 0).length;
@@ -56,15 +57,16 @@ export default function RoundsPage() {
 
       {firstPending && s.can('round.write') && (
         <Link href={`/round/?a=${firstPending.admission_id}&ward=${ward}`} className="btn teal" style={{ padding: 14, fontSize: 15 }}>
-          Start rounds · {pending.length} due in this ward
+          Start rounds · {pending.length} due{ward === 'all' ? '' : ' in this ward'}
         </Link>
       )}
-      {list.length > 0 && pending.length === 0 && <div className="msg ok">Every patient in this ward has a round today.</div>}
+      {list.length > 0 && pending.length === 0 && <div className="msg ok">Every patient here has a round today.</div>}
       {list.length === 0 && q.data && <p className="muted">No patients here.</p>}
 
       <div className="mobile-list">
-        {list.map((p) => (
-          <Link key={p.admission_id} href={`/round/?a=${p.admission_id}&ward=${ward}`} className="mcard">
+        {list.map((p, i) => (<div key={p.admission_id} className="stack" style={{ gap: 8 }}>
+          {ward === 'all' && (i === 0 || list[i - 1].ward_id !== p.ward_id) && <h3 style={{ margin: '8px 0 0' }}>{p.ward ?? 'No bed allocated'}</h3>}
+          <Link href={`/round/?a=${p.admission_id}&ward=${ward}`} className="mcard">
             <div className="spread">
               <span><b>{p.bed ?? '—'}</b> · {p.full_name} <span className="muted small">{p.age_years}/{p.sex}</span></span>
               <span className="row" style={{ gap: 6 }}>
@@ -80,7 +82,7 @@ export default function RoundsPage() {
               {p.open_tasks > 0 && <span className="muted"> · {p.open_tasks} open task{p.open_tasks > 1 ? 's' : ''}</span>}
             </div>
           </Link>
-        ))}
+        </div>))}
       </div>
     </div>
   );
