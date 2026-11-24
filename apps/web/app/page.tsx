@@ -60,6 +60,8 @@ export default function Home() {
 
   const seen = new Set<string>();
   const tiles = [...(supervisor ? SUPERVISOR_FIRST : CLINICAL_FIRST), ...COMMON]
+    // Only finished modules are shown; unfinished ones are added when they are ready.
+    .filter((t) => !t.soon)
     .filter((t) => (!t.perm || s.can(t.perm)) && (!t.levels || t.levels.includes(level)))
     .filter((t) => (seen.has(t.label) ? false : (seen.add(t.label), true)));
 
