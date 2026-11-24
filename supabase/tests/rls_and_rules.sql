@@ -179,7 +179,33 @@ select pg_temp.as_user('00000000-0000-0000-0000-0000000000c3');
 do $$ begin if (select count(*) from public.report_log) <> 0 then raise exception 'nurse sees others report log'; end if; end $$;
 reset role;
 
--- 9. audit trail was written
+-- 9. ward module: occupied bed cannot be switched off; snapshot captures today's data
+insert into auth.users values ('00000000-0000-0000-0000-0000000000a7', 'admin2@test');
+insert into public.staff (user_id, full_name) values ('00000000-0000-0000-0000-0000000000a7', 'Admin Two');
+insert into public.unit_members (unit_id, user_id, role_code) select unit6, '00000000-0000-0000-0000-0000000000a7', 'admin' from ctx;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a7');
+select pg_temp.expect_error($q$update public.ward_beds set active = false where label = 'M1'$q$, 'has a patient in it');
+update public.ward_beds set active = false where label = 'M30';
+update public.unit_settings set morning_report_hour = 9;
+reset role;
+select private.take_ward_snapshot((select unit6 from ctx), private.today_ist());
+do $$ declare d jsonb; begin
+  select data into d from public.daily_report_snapshots;
+  if jsonb_array_length(d->'pts') <> 1 then raise exception 'snapshot pts wrong: %', jsonb_array_length(d->'pts'); end if;
+  if jsonb_array_length(d->'entries') < 1 then raise exception 'snapshot entries missing'; end if;
+  if (d->'entries'->0->'author'->>'full_name') is null then raise exception 'snapshot author missing'; end if;
+  if (d->'census'->>'total_admitted')::int <> 1 then raise exception 'snapshot census wrong'; end if;
+end $$;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000c3');
+do $$ begin if (select count(*) from public.daily_report_snapshots) <> 1 then raise exception 'nurse cannot read snapshot'; end if; end $$;
+select pg_temp.expect_error($q$select private.take_ward_snapshot(unit6, current_date) from ctx$q$, 'permission denied');
+select public.save_ward_snapshot_now(unit6) from ctx;
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000d4');
+select pg_temp.expect_error($q$select public.save_ward_snapshot_now(unit6) from ctx$q$, 'report.generate');
+reset role;
+
+-- 10. audit trail was written
 do $$ begin
   if (select count(*) from public.audit_logs where table_name = 'ward_round_entries') < 3 then raise exception 'audit missing'; end if;
 end $$;

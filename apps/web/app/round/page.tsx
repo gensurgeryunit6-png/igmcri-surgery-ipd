@@ -49,7 +49,7 @@ function RoundView() {
     if (p.data) {
       const ward = await supabase.from('v_inpatients').select('admission_id, bed_sort, rounds_today, ward_id').eq('unit_id', (p.data as Inpatient).unit_id)
         .order('ward_sort').order('bed_sort');
-      const same = ((ward.data ?? []) as Inpatient[]).filter((x) => (wardId === 'none' ? !x.ward_id : x.ward_id === (wardId || (p.data as Inpatient).ward_id)));
+      const same = ((ward.data ?? []) as Inpatient[]).filter((x) => (wardId === 'all' ? true : wardId === 'none' ? !x.ward_id : x.ward_id === (wardId || (p.data as Inpatient).ward_id)));
       const idx = same.findIndex((x) => x.admission_id === admissionId);
       const after = [...same.slice(idx + 1), ...same.slice(0, Math.max(idx, 0))].find((x) => x.rounds_today === 0 && x.admission_id !== admissionId);
       setNextId(after?.admission_id ?? null);
@@ -98,7 +98,7 @@ function RoundView() {
         <NewEntry admissionId={admissionId} tasks={tasks} lastVitals={latest ? effective(latest, amends).vitals : {}}
           onSaved={(goNext) => {
             if (goNext && nextId) router.push(`/round/?a=${nextId}&ward=${wardId}`);
-            else { setSaved(nextId ? 'Round saved.' : 'Round saved. Every patient in this ward now has a round today.'); load(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+            else { setSaved(nextId ? 'Round saved.' : 'Round saved. Every patient here now has a round today.'); load(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
           }} hasNext={!!nextId} />
       )}
     </div>

@@ -21,12 +21,17 @@ export type Report = { title: string; subtitle: string; sections: Section[] };
 const bedLabel = (p: Inpatient) => p.bed ?? 'No bed';
 const who = (p: Inpatient) => `${p.full_name} (${p.age_years ?? '?'}/${p.sex})\nIP ${p.ip_number}`;
 
-/** Build a report from live data. `date` is an IST calendar date, yyyy-mm-dd. */
-export async function buildReport(kind: ReportKind, unitId: string, unitName: string, date: string, wardId?: string): Promise<Report> {
+export type ReportData = {
+  pts: Inpatient[]; wards: Ward[]; entries: Entry[]; amendments: Amendment[];
+  investigations: { id: string; admission_id: string; name: string; ordered_at: string }[];
+  tasks: { id: string; admission_id: string; kind: string; description: string; created_at: string }[];
+  census: Census | null;
+};
+
+/** Live data for a unit and IST date (yyyy-mm-dd). Saved snapshots have the same shape. */
+export async function fetchReportData(unitId: string, date: string): Promise<ReportData> {
   const from = new Date(`${date}T00:00:00+05:30`).toISOString();
   const to = new Date(new Date(`${date}T00:00:00+05:30`).getTime() + 864e5).toISOString();
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-
   const [ptsR, wardsR, entR, invR, taskR, cenR] = await Promise.all([
     supabase.from('v_inpatients').select('*').eq('unit_id', unitId).order('ward_sort').order('bed_sort'),
     supabase.from('wards').select('id, code, name, kind, sort_order').eq('unit_id', unitId).eq('active', true).order('sort_order'),
@@ -37,13 +42,24 @@ export async function buildReport(kind: ReportKind, unitId: string, unitName: st
     supabase.from('v_census_today').select('*').eq('unit_id', unitId).maybeSingle(),
   ]);
   for (const r of [ptsR, wardsR, entR, invR, taskR]) if (r.error) throw new Error(r.error.message);
-  const pts = (ptsR.data ?? []) as Inpatient[];
-  const wards = (wardsR.data ?? []) as Ward[];
   const entries = (entR.data ?? []) as Entry[];
   const ids = entries.map((e) => e.id);
-  const amR = ids.length ? await supabase.from('ward_round_amendments').select('*').in('entry_id', ids) : { data: [], error: null };
-  const am = (amR.data ?? []) as Amendment[];
-  const eff = entries.map((e) => effective(e, am));
+  const amR = ids.length ? await supabase.from('ward_round_amendments').select('*').in('entry_id', ids) : { data: [] };
+  return { pts: (ptsR.data ?? []) as Inpatient[], wards: (wardsR.data ?? []) as Ward[], entries, amendments: (amR.data ?? []) as Amendment[],
+    investigations: (invR.data ?? []) as ReportData['investigations'], tasks: (taskR.data ?? []) as ReportData['tasks'], census: (cenR.data as Census) ?? null };
+}
+
+export async function buildReport(kind: ReportKind, unitId: string, unitName: string, date: string, wardId?: string): Promise<Report> {
+  return buildFromData(kind, await fetchReportData(unitId, date), unitName, date, wardId, true);
+}
+
+/** Turn report data (live or saved) into printable sections. */
+export function buildFromData(kind: ReportKind, d: ReportData, unitName: string, date: string, wardId?: string, censusIsLiveToday = false): Report {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const invR = { data: d.investigations }, taskR = { data: d.tasks }, cenR = { data: d.census };
+  const pts = d.pts;
+  const wards = d.wards;
+  const eff = d.entries.map((e) => effective(e, d.amendments));
   const latestFor = (a: string) => eff.filter((e) => e.admission_id === a).at(-1);
   const countFor = (a: string) => eff.filter((e) => e.admission_id === a).length;
   const pendingFor = (a: string) => [
@@ -93,7 +109,7 @@ export async function buildReport(kind: ReportKind, unitId: string, unitName: st
         ['Critical', c?.critical], ['Awaiting surgery', c?.awaiting_surgery], ['Planned for discharge', c?.planned_discharge], ['Discharges completed', c?.discharged_today]];
       return { title: label, subtitle, sections: [
         { heading: 'Census', columns: ['Measure', 'Count'], rows: fig.map(([k, v]) => [k, String(v ?? '—')]),
-          note: date === today ? undefined : 'Census figures are for today, not the selected date.' },
+          note: censusIsLiveToday && date !== today ? 'Census figures are for today, not the selected date.' : undefined },
         { heading: 'Inpatients', columns: ['Bed', 'Patient', 'Diagnosis', 'Admitted', 'POD', 'Latest status'],
           rows: pts.map((p) => [bedLabel(p), who(p), p.diagnosis ?? '—', fmtDate(p.admitted_at), p.postop_day != null ? String(p.postop_day) : '—', p.last_status ? statusLabel(p.last_status) : '—']) },
       ] };

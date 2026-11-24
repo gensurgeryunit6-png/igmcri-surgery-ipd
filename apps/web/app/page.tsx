@@ -35,6 +35,7 @@ const COMMON: Tile[] = [
   { href: '/reports/', label: 'Daily reports', icon: 'reports', perm: 'report.generate' },
   { href: '#', label: 'Audit log', icon: 'reports', perm: 'audit.read', soon: 'Phase 8', levels: ['chief', 'admin'] },
   { href: '/users/', label: 'Users and roles', icon: 'team', perm: 'users.manage' },
+  { href: '/settings/', label: 'Wards and beds', icon: 'bed', perm: 'settings.manage' },
   { href: '/account/', label: 'My account', icon: 'user' },
 ];
 

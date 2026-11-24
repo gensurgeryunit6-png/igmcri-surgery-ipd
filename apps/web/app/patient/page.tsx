@@ -8,6 +8,7 @@ import { fmtDate, fmtDateTime, ageSex, nowLocalInput, istInputToIso, STATUS_LABE
 import { useColleagues, isFaculty, isPG } from '@/lib/staff';
 import { BedPicker } from '@/components/BedPicker';
 import { StatusBadge } from '@/components/ui';
+import { Photos } from '@/components/Photos';
 
 type Patient = { id: string; uhid: string; full_name: string; age_years: number | null; date_of_birth: string | null; sex: string;
   phone: string | null; address: string | null; emergency_contact_name: string | null; emergency_contact_phone: string | null;
@@ -66,7 +67,7 @@ function PatientView() {
       </div>
 
       <div className="tabs">
-        {TABS.filter((t) => active || ['admission', 'history'].includes(t.key)).map((t) => (
+        {TABS.filter((t) => active || ['admission', 'photos', 'history'].includes(t.key)).map((t) => (
           <button key={t.key} className={tab === t.key ? 'on' : ''} onClick={() => setTab(t.key)}>{t.label}</button>
         ))}
       </div>
@@ -79,6 +80,7 @@ function PatientView() {
       {active && tab === 'tests' && <Investigations admissionId={active.id} />}
       {active && tab === 'medicines' && <Medications admissionId={active.id} />}
       {active && tab === 'rounds' && <Rounds admissionId={active.id} />}
+      {tab === 'photos' && <Photos patientId={p.id} admissionId={active?.id} />}
       {tab === 'history' && (
         <div className="card">
           <h3>Admission history</h3>
@@ -86,7 +88,7 @@ function PatientView() {
             <div key={a.id} className="spread small" style={{ borderBottom: '1px solid #edf0f4', padding: '8px 0' }}>
               <span><b>IP {a.ip_number}</b> · {fmtDate(a.admitted_at)} → {a.discharged_at ? fmtDate(a.discharged_at) : 'now'}
                 <span className="muted"> · {a.admission_type}{a.consultant ? ` · ${a.consultant.full_name}` : ''}</span></span>
-              <span className={`badge ${a.status === 'admitted' ? 'teal' : ''}`}>{a.status}</span>
+              <span className="row" style={{ gap: 6 }}><Link href={`/discharge/?a=${a.id}`}>Summary</Link><span className={`badge ${a.status === 'admitted' ? 'teal' : ''}`}>{a.status}</span></span>
             </div>
           ))}
         </div>
@@ -98,6 +100,7 @@ function PatientView() {
 const TABS = [
   { key: 'admission', label: 'Admission' }, { key: 'diagnosis', label: 'Diagnosis' }, { key: 'surgery', label: 'Surgery' },
   { key: 'tests', label: 'Investigations' }, { key: 'medicines', label: 'Medicines' }, { key: 'rounds', label: 'Ward rounds' },
+  { key: 'photos', label: 'Photos' },
   { key: 'history', label: 'History' },
 ];
 
@@ -197,9 +200,12 @@ function ActiveAdmission({ a, onChange }: { a: Admission; onChange: () => void }
   const [planned, setPlanned] = useState(a.planned_discharge_on ?? '');
   const [err, setErr] = useState('');
 
+  const [moves, setMoves] = useState<{ from_at: string; to_at: string | null; reason: string | null; ward_beds: { label: string; wards: { name: string } } }[]>([]);
   const loadBed = useCallback(async () => {
-    const { data } = await supabase.from('bed_assignments').select('ward_beds(label, wards(name))').eq('admission_id', a.id).is('to_at', null).maybeSingle();
-    const b = (data as any)?.ward_beds;
+    const { data } = await supabase.from('bed_assignments').select('from_at, to_at, reason, ward_beds(label, wards(name))').eq('admission_id', a.id).order('from_at');
+    const list = (data as any[]) ?? [];
+    setMoves(list);
+    const b = list.find((x) => !x.to_at)?.ward_beds;
     setBed(b ? { label: b.label, ward: b.wards?.name } : null);
   }, [a.id]);
   useEffect(() => { loadBed(); }, [loadBed]);
@@ -236,6 +242,7 @@ function ActiveAdmission({ a, onChange }: { a: Admission; onChange: () => void }
         {s.can('ipd.write') && (
           <div className="row">
             <button className="ghost" onClick={() => setMode(mode === 'move' ? '' : 'move')}>{bed ? 'Move bed / ward' : 'Allocate bed'}</button>
+            <Link className="btn ghost" href={`/discharge/?a=${a.id}`}>Discharge summary</Link>
             {s.can('ipd.discharge') && <button className="ghost" onClick={() => setMode(mode === 'discharge' ? '' : 'discharge')}>Discharge</button>}
           </div>
         )}
@@ -258,6 +265,16 @@ function ActiveAdmission({ a, onChange }: { a: Admission; onChange: () => void }
             <div className="row"><button onClick={() => run(() => supabase.rpc('discharge_patient', { p_admission_id: a.id, p_status: dStatus, p_note: dNote || null }))}>Confirm {dStatus === 'discharged' ? 'discharge' : dStatus.replace('_', ' ')}</button>
               <button className="ghost" onClick={() => setMode('')}>Cancel</button></div>
           </div>
+        )}
+        {moves.length > 1 && (
+          <details className="small">
+            <summary style={{ cursor: 'pointer', color: 'var(--muted)' }}>Bed and ward history · {moves.length} moves</summary>
+            {moves.map((m, i) => (
+              <div key={i} style={{ padding: '4px 0', borderBottom: '1px solid #edf0f4' }}>
+                <b>{m.ward_beds?.wards?.name} · {m.ward_beds?.label}</b> <span className="muted">{fmtDateTime(m.from_at)} → {m.to_at ? fmtDateTime(m.to_at) : 'now'}{m.reason ? ` · ${m.reason}` : ''}</span>
+              </div>
+            ))}
+          </details>
         )}
         {err && <div className="msg err">{err}</div>}
       </div>

@@ -20,17 +20,17 @@ export default function WardBoard() {
   }, LIVE_TABLES, [unitId]);
 
   const byBed = new Map((q.data?.pts ?? []).filter((p) => p.bed_id).map((p) => [p.bed_id!, p]));
-  const only = pick || q.data?.wards[0]?.id || '';
+  const only = pick || 'all';
   const wards = (q.data?.wards ?? []).filter((w) => only === 'all' || w.id === only);
 
   return (
     <div className="stack">
       <div className="tabs">
+        <button className={only === 'all' ? 'on' : ''} onClick={() => setPick('all')}>All wards · {(q.data?.pts ?? []).length}</button>
         {(q.data?.wards ?? []).map((w) => {
           const n = (q.data?.pts ?? []).filter((p) => p.ward_id === w.id).length;
           return <button key={w.id} className={only === w.id ? 'on' : ''} onClick={() => setPick(w.id)}>{w.name.replace(' Surgical Ward', ' ward').replace(' / Other beds', '')} · {n}</button>;
         })}
-        <button className={only === 'all' ? 'on' : ''} onClick={() => setPick('all')}>All</button>
       </div>
       <div className="muted small">{todayLabel()} · amber line = no round yet today · red edge = critical</div>
       {q.error && <div className="msg err">{q.error}</div>}
