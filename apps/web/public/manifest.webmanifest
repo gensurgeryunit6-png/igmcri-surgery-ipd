@@ -1,0 +1,17 @@
+{
+  "name": "Surgery Unit OS · Unit VI",
+  "short_name": "Unit VI",
+  "description": "IGMCRI General Surgery Unit VI — census, ward rounds, reports",
+  "id": "/igmcri-surgery-ipd/",
+  "start_url": "/igmcri-surgery-ipd/",
+  "scope": "/igmcri-surgery-ipd/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#12305a",
+  "theme_color": "#12305a",
+  "icons": [
+    { "src": "/igmcri-surgery-ipd/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/igmcri-surgery-ipd/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/igmcri-surgery-ipd/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

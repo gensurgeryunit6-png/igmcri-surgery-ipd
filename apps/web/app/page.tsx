@@ -6,6 +6,7 @@ import { useLive, must, LIVE_TABLES, type Census } from '@/lib/data';
 import { todayLabel } from '@/lib/format';
 import { Icon } from '@/components/Icon';
 import { roleName } from '@/components/Shell';
+import { InstallApp } from '@/components/InstallApp';
 import { levelOf, type Level } from '@/lib/roles';
 
 type Tile = { href: string; label: string; icon: string; perm?: string; soon?: string; levels?: Level[] };
@@ -74,6 +75,8 @@ export default function Home() {
           <span className="badge navy">{s.roles.map(roleName).join(' · ')}</span>
         </div>
       </div>
+
+      <InstallApp />
 
       <Link href="/census/" className="today">
         <div><b>{c?.total_admitted ?? '–'}</b><span>Admitted</span></div>
