@@ -12,14 +12,15 @@ type Tile = { href: string; label: string; icon: string; perm?: string; soon?: s
 
 // Order matters: each role sees its most-used modules first.
 const CLINICAL_FIRST: Tile[] = [
-  { href: '#', label: 'Ward rounds', icon: 'rounds', perm: 'round.write', soon: 'Phase 4', levels: ['resident', 'intern'] },
+  { href: '/rounds/', label: 'Ward rounds', icon: 'rounds', perm: 'round.write' },
   { href: '/wards/', label: 'Ward board', icon: 'bed' },
   { href: '/patients/', label: 'Patients', icon: 'patients' },
   { href: '/patients/?new=1', label: 'Register patient', icon: 'addUser', perm: 'patient.write' },
   { href: '/census/', label: "Today's census", icon: 'census' },
 ];
 const SUPERVISOR_FIRST: Tile[] = [
-  { href: '#', label: 'Verify rounds', icon: 'rounds', perm: 'round.verify', soon: 'Phase 4' },
+  { href: '/verify/', label: 'Verify rounds', icon: 'rounds', perm: 'round.verify' },
+  { href: '/rounds/', label: 'Ward rounds', icon: 'rounds', perm: 'round.write' },
   { href: '#', label: 'Approve OT list', icon: 'ot', perm: 'ot.approve', soon: 'Phase 5' },
   { href: '/census/', label: "Today's census", icon: 'census' },
   { href: '/wards/', label: 'Ward board', icon: 'bed' },
@@ -31,7 +32,7 @@ const COMMON: Tile[] = [
   { href: '#', label: 'Endoscopy', icon: 'scope', soon: 'Phase 6' },
   { href: '#', label: 'OPD', icon: 'opd', soon: 'Phase 7' },
   { href: '#', label: 'PG logbook', icon: 'reports', soon: 'Phase 8', levels: ['resident', 'intern'] },
-  { href: '#', label: 'Reports', icon: 'reports', perm: 'report.generate', soon: 'Phase 8' },
+  { href: '/reports/', label: 'Daily reports', icon: 'reports', perm: 'report.generate' },
   { href: '#', label: 'Audit log', icon: 'reports', perm: 'audit.read', soon: 'Phase 8', levels: ['chief', 'admin'] },
   { href: '/users/', label: 'Users and roles', icon: 'team', perm: 'users.manage' },
   { href: '/account/', label: 'My account', icon: 'user' },
@@ -80,19 +81,19 @@ export default function Home() {
       {live.error && <div className="msg err">{live.error}</div>}
 
       {supervisor && s.can('round.verify') && (
-        <Link href="/wards/" className="card spread" style={{ color: 'inherit' }}>
+        <Link href="/verify/" className="card spread" style={{ color: 'inherit' }}>
           <span><b>{toVerify}</b> round {toVerify === 1 ? 'entry' : 'entries'} today waiting for your verification</span>
           <span className={`badge ${toVerify ? 'warn' : 'ok'}`}>{toVerify ? 'Review' : 'All clear'}</span>
         </Link>
       )}
       {(level === 'resident' || level === 'intern') && (
-        <Link href="/wards/" className="card spread" style={{ color: 'inherit' }}>
+        <Link href="/rounds/" className="card spread" style={{ color: 'inherit' }}>
           {mine.length ? (
             <span><b>{mine.filter((p) => !p.rounds_today).length}</b> of your {mine.length} patients still need today&apos;s round</span>
           ) : (
             <span><b>{c?.rounds_pending ?? 0}</b> patients in the unit still need today&apos;s round</span>
           )}
-          <span className="badge teal">Ward board</span>
+          <span className="badge teal">Start rounds</span>
         </Link>
       )}
 

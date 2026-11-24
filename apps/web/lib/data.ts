@@ -10,7 +10,7 @@ export type Census = {
 
 export type Inpatient = {
   admission_id: string; unit_id: string; ip_number: string; admitted_at: string; admission_type: string;
-  planned_discharge_on: string | null; patient_id: string; uhid: string; full_name: string; age_years: number | null;
+  planned_discharge_on: string | null; assigned_pg_id: string | null; consultant_id: string | null; patient_id: string; uhid: string; full_name: string; age_years: number | null;
   sex: string; allergies: string | null; bed_id: string | null; bed: string | null; ward_id: string | null; ward: string | null;
   ward_kind: string | null; ward_sort: number | null; bed_sort: number | null; diagnosis: string | null;
   last_status: string | null; last_round_at: string | null; rounds_today: number; unverified_today: number;

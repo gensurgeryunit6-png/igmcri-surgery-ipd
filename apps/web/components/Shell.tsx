@@ -8,6 +8,7 @@ import { Icon } from './Icon';
 
 // Title shown in the app bar for each screen.
 const TITLES: [string, string][] = [
+  ['/rounds', 'Ward rounds'], ['/round', 'Ward round'], ['/verify', 'Verify rounds'], ['/reports', 'Daily reports'],
   ['/census', "Today's census"], ['/wards', 'Ward board'], ['/patients', 'Patients'], ['/patient', 'Patient'],
   ['/users', 'Users and roles'], ['/account', 'My account'],
 ];

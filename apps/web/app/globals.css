@@ -171,3 +171,26 @@ a.bed:hover { border-color: var(--teal); text-decoration: none; }
   .beds { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
   .bed.empty { min-height: 0; padding: 6px 10px; }
 }
+
+/* ---------- printable reports */
+.report { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+.letterhead { text-align: center; border-bottom: 2px solid var(--navy); padding-bottom: 8px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 2px; }
+.letterhead b { font-size: 13px; letter-spacing: .03em; color: var(--navy); }
+.letterhead span { font-size: 12.5px; color: var(--muted); }
+.letterhead h2 { margin: 6px 0 0; font-size: 17px; }
+.report-section { margin-top: 14px; }
+.report-section h3 { text-transform: none; letter-spacing: 0; font-size: 14px; }
+.report-table td { white-space: pre-line; font-size: 12.5px; }
+.report-table th { font-size: 11px; }
+.report-table td.missing { color: var(--bad); font-weight: 700; }
+.report-foot { margin-top: 14px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 6px; }
+@media print {
+  .report { border: 0; padding: 0; }
+  .report .table-wrap { overflow: visible; border: 0; }
+  .report-table { font-size: 9pt; }
+  .report-table td, .report-table th { border: 1px solid #999 !important; padding: 4px 5px; }
+  .report-table tr { break-inside: avoid; }
+  .report-table thead { display: table-header-group; }
+  .letterhead { border-bottom-color: #000; }
+  .report-section h3 { break-after: avoid; page-break-after: avoid; }
+}

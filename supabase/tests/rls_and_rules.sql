@@ -170,7 +170,16 @@ select pg_temp.expect_error($q$select public.verify_ward_round((select id from p
 select pg_temp.expect_error($q$insert into public.investigations (admission_id, name) select id, 'CBC' from public.admissions where ip_number = 'IP-103'$q$, 'row-level security');
 reset role;
 
--- 8. audit trail was written
+-- 8. report log: intern may log own report, nurse sees only own rows, cannot log as someone else
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000f6');
+insert into public.report_log (unit_id, kind, format) select unit6, 'unit', 'print' from ctx;
+select pg_temp.expect_error($q$insert into public.report_log (unit_id, kind, format, generated_by) select unit6, 'unit', 'xlsx', '00000000-0000-0000-0000-0000000000a1' from ctx$q$, 'row-level security');
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000c3');
+do $$ begin if (select count(*) from public.report_log) <> 0 then raise exception 'nurse sees others report log'; end if; end $$;
+reset role;
+
+-- 9. audit trail was written
 do $$ begin
   if (select count(*) from public.audit_logs where table_name = 'ward_round_entries') < 3 then raise exception 'audit missing'; end if;
 end $$;
