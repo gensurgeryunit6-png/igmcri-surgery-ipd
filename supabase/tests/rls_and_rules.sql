@@ -230,7 +230,25 @@ select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
 do $$ begin if (select count(*) from public.notifications) <> 0 then raise exception 'PG sees others notifications or got own'; end if; end $$;
 reset role;
 
--- 11. audit trail was written
+-- 11. personnel and automatic bed assignment
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b2');
+insert into public.unit_personnel (unit_id, full_name, category, pg_year, user_id) select unit6, 'Dr PG One', 'pg', 1, '00000000-0000-0000-0000-0000000000a1' from ctx;
+do $$ begin if (select count(*) from public.unit_personnel where category = 'consultant') <> 2 then raise exception 'consultants not seeded'; end if; end $$;
+insert into public.patients (institution_id, uhid, full_name, age_years, sex, allergy_status) select inst, 'TEST-0004', 'Fourth Patient', 40, 'M', 'no' from ctx;
+create temp table got as select * from public.admit_patient_auto((select id from public.patients where uhid = 'TEST-0004'),
+  (select unit6 from ctx), 'IP-200', (select id from public.wards where code = 'MSW'), now(), 'elective', 'Hernia',
+  (select id from public.unit_personnel where full_name = 'Dr. Ray'), (select id from public.unit_personnel where full_name = 'Dr PG One'));
+do $$ begin
+  if (select bed_label from got) is null then raise exception 'no bed assigned'; end if;
+  if (select consultant_name from public.v_inpatients where ip_number = 'IP-200') <> 'Dr. Ray' then raise exception 'consultant name missing'; end if;
+  if (select assigned_pg_id from public.v_inpatients where ip_number = 'IP-200') <> '00000000-0000-0000-0000-0000000000a1' then raise exception 'pg user link missing'; end if;
+end $$;
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+select pg_temp.expect_error($q$insert into public.unit_personnel (unit_id, full_name, category) select unit6, 'X Y', 'pg' from ctx$q$, 'row-level security');
+reset role;
+
+-- 12. audit trail was written
 do $$ begin
   if (select count(*) from public.audit_logs where table_name = 'ward_round_entries') < 3 then raise exception 'audit missing'; end if;
 end $$;

@@ -21,8 +21,9 @@ const FIELDS = [
 type Content = Partial<Record<(typeof FIELDS)[number]['k'], string>>;
 
 type Adm = { id: string; ip_number: string; admitted_at: string; discharged_at: string | null; status: string; unit_id: string;
-  patients: { id: string; full_name: string; uhid: string; age_years: number | null; sex: string; address: string | null; allergies: string | null };
-  consultant: { full_name: string } | null; pg: { full_name: string } | null };
+  patients: { id: string; full_name: string; uhid: string; age_years: number | null; sex: string; allergy_status: string | null; allergies: string | null };
+  consultant: { full_name: string } | null; pg: { full_name: string } | null;
+  cp: { full_name: string } | null; pgp: { full_name: string } | null };
 type Summary = { id: string; content: Content; status: string; finalised_at: string | null; finalised_by: string | null; finaliser?: { full_name: string } | null };
 
 export default function DischargePage() { return <Suspense><DischargeView /></Suspense>; }
@@ -38,7 +39,7 @@ function DischargeView() {
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
 
   const load = useCallback(async () => {
-    const a = await supabase.from('admissions').select('*, patients(id, full_name, uhid, age_years, sex, address, allergies), consultant:staff!admissions_consultant_id_fkey(full_name), pg:staff!admissions_assigned_pg_id_fkey(full_name)').eq('id', id).single();
+    const a = await supabase.from('admissions').select('*, patients(id, full_name, uhid, age_years, sex, allergy_status, allergies), consultant:staff!admissions_consultant_id_fkey(full_name), pg:staff!admissions_assigned_pg_id_fkey(full_name), cp:unit_personnel!admissions_consultant_person_id_fkey(full_name), pgp:unit_personnel!admissions_pg_person_id_fkey(full_name)').eq('id', id).single();
     if (a.error) return setMsg({ kind: 'err', text: friendlyError(a.error) });
     setAdm(a.data as Adm);
     const b = await supabase.from('bed_assignments').select('ward_beds(label, wards(name))').eq('admission_id', id).order('from_at', { ascending: false }).limit(1).maybeSingle();
@@ -108,13 +109,13 @@ function DischargeView() {
         <table className="ds-head"><tbody>
           <tr><td><span>Name</span>{p.full_name}</td><td><span>Age / Sex</span>{p.age_years ?? '—'} / {p.sex}</td><td><span>UHID</span>{p.uhid}</td></tr>
           <tr><td><span>IP number</span>{adm.ip_number}</td><td><span>Admitted</span>{fmtDate(adm.admitted_at)}</td><td><span>Discharged</span>{adm.discharged_at ? fmtDate(adm.discharged_at) : '—'}</td></tr>
-          <tr><td><span>Ward / bed</span>{bed}</td><td><span>Consultant</span>{adm.consultant?.full_name ?? '—'}</td><td><span>Allergies</span>{p.allergies || 'None known'}</td></tr>
+          <tr><td><span>Ward / bed</span>{bed}</td><td><span>Consultant</span>{(adm.cp ?? adm.consultant)?.full_name ?? '—'}</td><td><span>Allergies</span>{p.allergy_status !== 'no' && p.allergies ? p.allergies : 'None known'}</td></tr>
         </tbody></table>
         {FIELDS.filter((f) => c[f.k]?.trim()).map((f) => (
           <div key={f.k} className="ds-sec"><h4>{f.label}</h4><p>{c[f.k]}</p></div>
         ))}
         <div className="ds-sign">
-          <div>{adm.pg?.full_name ?? ''}<span>Postgraduate</span></div>
+          <div>{(adm.pgp ?? adm.pg)?.full_name ?? ''}<span>Postgraduate</span></div>
           <div>{final ? sum?.finaliser?.full_name : ''}<span>Faculty / Unit Chief{final ? ` · finalised ${fmtDateTime(sum?.finalised_at)}` : ''}</span></div>
         </div>
         <div className="report-foot">In an emergency go to the IGMCRI casualty. Bring this summary to every follow-up visit.</div>

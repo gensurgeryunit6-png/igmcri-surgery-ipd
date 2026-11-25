@@ -1,6 +1,7 @@
 'use client';
 import { Suspense, useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
+import { AllergyField } from '@/components/ui';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from '@/lib/session';
 import { supabase, friendlyError } from '@/lib/supabase';
@@ -70,8 +71,8 @@ const COMORBIDITIES = ['Diabetes mellitus', 'Hypertension', 'Coronary artery dis
 
 function NewPatient({ onCancel, onCreated }: { onCancel: () => void; onCreated: (id: string) => void }) {
   const s = useSession();
-  const [f, setF] = useState({ uhid: '', full_name: '', age_years: '', date_of_birth: '', sex: '', phone: '', address: '',
-    emergency_contact_name: '', emergency_contact_phone: '', allergies: '', blood_group: '' });
+  const [f, setF] = useState({ uhid: '', full_name: '', age_years: '', sex: '', phone: '',
+    emergency_contact_name: '', emergency_contact_phone: '', allergy_status: '', allergies: '' });
   const [como, setComo] = useState<string[]>([]);
   const [other, setOther] = useState('');
   const [dups, setDups] = useState<Dup[]>([]);
@@ -96,16 +97,17 @@ function NewPatient({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
 
   const save = async (e: FormEvent) => {
     e.preventDefault(); setErr('');
-    if (!f.age_years && !f.date_of_birth) { setErr('Enter either age or date of birth.'); return; }
+    if (!f.allergy_status) { setErr('Choose Yes or No for allergies.'); return; }
+    if (f.allergy_status === 'yes' && !f.allergies.trim()) { setErr('Write what the patient is allergic to.'); return; }
     if (dups.length && !ackDup) { setErr('Possible duplicate found. Open the existing record, or confirm this is a different patient.'); return; }
     setBusy(true);
     const comorbidities = [...como, ...other.split(',').map((x) => x.trim()).filter(Boolean)];
     const { data, error } = await supabase.from('patients').insert({
       institution_id: s.institutionId, uhid: f.uhid.trim(), full_name: f.full_name.trim(),
       age_years: f.age_years ? Number(f.age_years) : null, age_recorded_on: f.age_years ? new Date().toISOString().slice(0, 10) : null,
-      date_of_birth: f.date_of_birth || null, sex: f.sex, phone: f.phone.trim() || null, address: f.address.trim() || null,
+      sex: f.sex, phone: f.phone.trim() || null,
       emergency_contact_name: f.emergency_contact_name.trim() || null, emergency_contact_phone: f.emergency_contact_phone.trim() || null,
-      allergies: f.allergies.trim() || null, blood_group: f.blood_group || null, comorbidities,
+      allergy_status: f.allergy_status, allergies: f.allergy_status === 'yes' ? f.allergies.trim() : null, comorbidities,
     }).select('id').single();
     setBusy(false);
     if (error) setErr(friendlyError(error)); else onCreated(data.id);
@@ -127,21 +129,17 @@ function NewPatient({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
           {!sameUhid && <label style={{ color: 'inherit', margin: 0 }}><input type="checkbox" style={{ width: 'auto', marginRight: 6 }} checked={ackDup} onChange={(e) => setAckDup(e.target.checked)} />This is a different patient</label>}
         </div>
       )}
-      <div className="grid g4">
-        <div className="field"><label>Age (years)</label><input type="number" min={0} max={130} value={f.age_years} onChange={set('age_years')} inputMode="numeric" /></div>
-        <div className="field"><label>or Date of birth</label><input type="date" value={f.date_of_birth} onChange={set('date_of_birth')} /></div>
+      <div className="grid g2">
+        <div className="field"><label className="req">Age (years)</label><input required type="number" min={0} max={130} value={f.age_years} onChange={set('age_years')} inputMode="numeric" /></div>
         <div className="field"><label className="req">Sex</label>
           <select required value={f.sex} onChange={set('sex')}><option value="">Select</option><option value="M">Male</option><option value="F">Female</option><option value="O">Other</option></select></div>
-        <div className="field"><label>Blood group</label>
-          <select value={f.blood_group} onChange={set('blood_group')}><option value="">—</option>{['A+','A-','B+','B-','AB+','AB-','O+','O-'].map((b) => <option key={b}>{b}</option>)}</select></div>
       </div>
       <div className="grid g3">
         <div className="field"><label>Phone</label><input value={f.phone} onChange={set('phone')} inputMode="tel" /></div>
         <div className="field"><label>Emergency contact name</label><input value={f.emergency_contact_name} onChange={set('emergency_contact_name')} /></div>
         <div className="field"><label>Emergency contact phone</label><input value={f.emergency_contact_phone} onChange={set('emergency_contact_phone')} inputMode="tel" /></div>
       </div>
-      <div className="field"><label>Address</label><textarea value={f.address} onChange={set('address')} style={{ minHeight: 50 }} /></div>
-      <div className="field"><label>Allergies</label><input value={f.allergies} onChange={set('allergies')} placeholder="e.g. Penicillin — rash. Leave blank if none known." /></div>
+      <AllergyField status={f.allergy_status} text={f.allergies} onStatus={(v) => setF({ ...f, allergy_status: v })} onText={(v) => setF({ ...f, allergies: v })} />
       <div className="field"><label>Comorbidities</label>
         <div className="row" style={{ gap: 6 }}>
           {COMORBIDITIES.map((c) => (

@@ -54,6 +54,7 @@ export default function Home() {
       { href: OPD_MINOR_OT_URL, label: 'OPD minor OT', icon: 'minor', external: true },
     ] },
     { title: 'Administration', tiles: [
+      { href: '/personnel/', label: 'Unit personnel', icon: 'team' },
       { href: '/reports/', label: 'Downloads', icon: 'reports', perm: 'report.generate' },
       { href: '/more/', label: 'More', icon: 'team' },
     ] },
