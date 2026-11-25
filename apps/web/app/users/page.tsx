@@ -8,19 +8,18 @@ type Member = { id: string; user_id: string; role_code: string; active: boolean 
 type StaffRow = { user_id: string; full_name: string; designation: string | null; email: string | null; active: boolean };
 const ROLES = ['unit_chief', 'faculty', 'senior_resident', 'postgraduate', 'intern', 'staff_nurse', 'data_entry', 'admin'];
 
-// [action, intern, PG/SR, faculty, unit chief] — mirrors role_permissions in the database.
+// [action, intern, PG/SR, consultant, unit chief] — mirrors role_permissions in the database.
 const ACCESS: [string, boolean, boolean, boolean, boolean][] = [
-  ['View patients, census, ward board', true, true, true, true],
-  ['Register patients', true, true, true, true],
-  ['Write ward-round notes', true, true, true, true],
-  ['Admit, move beds, order tests, medicines', false, true, true, true],
-  ['Amend a round (with reason)', false, true, true, true],
-  ['Prepare OT lists', false, true, true, true],
+  ['View patients, inpatients, ward rounds, schedules', true, true, true, true],
+  ['Register patients, admit, update records', false, true, true, true],
+  ['Write ward-round notes, amend with reason', false, true, true, true],
+  ['Add patients to OT and endoscopy lists', false, true, true, true],
+  ['Submit duty reports, apply for leave', false, true, false, false],
   ['Discharge (Senior Residents yes, PGs no)', false, false, true, true],
-  ['Verify rounds and surgery dates', false, false, true, true],
-  ['Approve OT lists', false, false, true, true],
-  ['Publish OT lists', false, false, false, true],
-  ['View audit log', false, false, false, true],
+  ['Review and verify rounds, approve OT lists', false, false, true, true],
+  ['Approve leave, view all duty reports', false, false, true, true],
+  ['Remove (archive) patient records', false, false, true, true],
+  ['Manage users, wards, protocols, settings', false, false, true, true],
 ];
 
 export default function UsersPage() {
@@ -103,7 +102,7 @@ export default function UsersPage() {
         <summary style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--navy)' }}>What each role can do</summary>
         <div className="table-wrap" style={{ marginTop: 10 }}>
           <table className="t">
-            <thead><tr><th></th><th>Intern</th><th>PG / SR</th><th>Faculty</th><th>Unit Chief</th></tr></thead>
+            <thead><tr><th></th><th>Intern</th><th>PG / SR</th><th>Consultant</th><th>Unit Chief</th></tr></thead>
             <tbody>
               {ACCESS.map(([what, ...v]) => <tr key={what}><td>{what}</td>{v.map((x, i) => <td key={i} style={{ color: x ? 'var(--ok)' : 'var(--muted)' }}>{x ? 'Yes' : '—'}</td>)}</tr>)}
             </tbody>

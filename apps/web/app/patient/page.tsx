@@ -54,7 +54,15 @@ function PatientView() {
               {p.blood_group && <span>Blood group {p.blood_group}</span>}{p.phone && <span>{p.phone}</span>}
             </div>
           </div>
-          {s.can('patient.write') && !editing && <button className="ghost" onClick={() => setEditing(true)}>Edit details</button>}
+          <div className="row" style={{ gap: 6 }}>
+            {s.can('patient.write') && !editing && <button className="ghost" onClick={() => setEditing(true)}>Edit details</button>}
+            {s.can('patient.archive') && !active && <button className="danger" onClick={async () => {
+              const reason = prompt('Reason for removing this patient record (e.g. duplicate registration). The record is archived, not erased, and kept in the audit log.');
+              if (!reason) return;
+              const { error } = await supabase.rpc('archive_patient', { p_patient: p.id, p_reason: reason });
+              if (error) alert(friendlyError(error)); else { alert('Patient record removed from lists.'); history.back(); }
+            }}>Remove record</button>}
+          </div>
         </div>
         {p.allergies && <div className="msg err" style={{ marginTop: 10 }}><b>Allergies:</b> {p.allergies}</div>}
         {editing ? <EditPatient p={p} onDone={() => { setEditing(false); load(); }} /> : (
