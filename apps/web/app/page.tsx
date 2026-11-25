@@ -7,127 +7,108 @@ import { todayLabel } from '@/lib/format';
 import { Icon } from '@/components/Icon';
 import { roleName } from '@/components/Shell';
 import { InstallApp } from '@/components/InstallApp';
-import { levelOf, type Level } from '@/lib/roles';
 
-type Tile = { href: string; label: string; icon: string; perm?: string; soon?: string; levels?: Level[] };
+type Tile = { href: string; label: string; icon: string; perm?: string; badge?: number };
+type Group = { title: string; tiles: Tile[] };
 
-// Order matters: each role sees its most-used modules first.
-const CLINICAL_FIRST: Tile[] = [
-  { href: '/rounds/', label: 'Ward rounds', icon: 'rounds', perm: 'round.write' },
-  { href: '/wards/', label: 'Ward board', icon: 'bed' },
-  { href: '/patients/', label: 'Patients', icon: 'patients' },
-  { href: '/patients/?new=1', label: 'Register patient', icon: 'addUser', perm: 'patient.write' },
-  { href: '/census/', label: "Today's census", icon: 'census' },
-];
-const SUPERVISOR_FIRST: Tile[] = [
-  { href: '/verify/', label: 'Verify rounds', icon: 'rounds', perm: 'round.verify' },
-  { href: '/rounds/', label: 'Ward rounds', icon: 'rounds', perm: 'round.write' },
-  { href: '#', label: 'Approve OT list', icon: 'ot', perm: 'ot.approve', soon: 'Phase 5' },
-  { href: '/census/', label: "Today's census", icon: 'census' },
-  { href: '/wards/', label: 'Ward board', icon: 'bed' },
-  { href: '/patients/', label: 'Patients', icon: 'patients' },
-];
-const COMMON: Tile[] = [
-  { href: '#', label: 'Major OT', icon: 'ot', perm: 'ot.prepare', soon: 'Phase 5', levels: ['resident'] },
-  { href: '#', label: 'Minor OT', icon: 'minor', soon: 'Phase 5' },
-  { href: '#', label: 'Endoscopy', icon: 'scope', soon: 'Phase 6' },
-  { href: '#', label: 'OPD', icon: 'opd', soon: 'Phase 7' },
-  { href: '#', label: 'PG logbook', icon: 'reports', soon: 'Phase 8', levels: ['resident', 'intern'] },
-  { href: '/reports/', label: 'Daily reports', icon: 'reports', perm: 'report.generate' },
-  { href: '#', label: 'Audit log', icon: 'reports', perm: 'audit.read', soon: 'Phase 8', levels: ['chief', 'admin'] },
-  { href: '/users/', label: 'Users and roles', icon: 'team', perm: 'users.manage' },
-  { href: '/settings/', label: 'Wards and beds', icon: 'bed', perm: 'settings.manage' },
-  { href: '/account/', label: 'My account', icon: 'user' },
-];
-
+/** Home: unit, date, user, notifications and pending tasks on top; modules below in groups.
+ *  A module appears only once it is finished, and only if the person's role allows it. */
 export default function Home() {
   const s = useSession();
   const unitId = s.unit?.id;
   const me = s.session?.user.id;
-  const level = levelOf(s.roles);
-  const supervisor = level === 'chief' || level === 'faculty';
 
   const live = useLive(async () => {
-    const [c, pts] = await Promise.all([
+    const [c, pts, n] = await Promise.all([
       must(supabase.from('v_census_today').select('*').eq('unit_id', unitId!).maybeSingle()),
       must(supabase.from('v_inpatients').select('admission_id, assigned_pg_id, rounds_today, unverified_today').eq('unit_id', unitId!)),
+      must(supabase.from('notifications').select('id', { count: 'exact', head: false }).is('read_at', null).limit(50)),
     ]);
-    return { c: c as Census | null, pts: pts as { assigned_pg_id: string | null; rounds_today: number; unverified_today: number }[] };
-  }, LIVE_TABLES, [unitId]);
+    return { c: c as Census | null, pts: pts as { assigned_pg_id: string | null; rounds_today: number; unverified_today: number }[], unread: (n as unknown[]).length };
+  }, [...LIVE_TABLES, 'notifications'], [unitId]);
+
   const c = live.data?.c;
   const pts = live.data?.pts ?? [];
   const mine = pts.filter((p) => p.assigned_pg_id === me);
   const toVerify = pts.reduce((n, p) => n + p.unverified_today, 0);
+  const dueMine = mine.filter((p) => !p.rounds_today).length;
 
-  const seen = new Set<string>();
-  const tiles = [...(supervisor ? SUPERVISOR_FIRST : CLINICAL_FIRST), ...COMMON]
-    // Only finished modules are shown; unfinished ones are added when they are ready.
-    .filter((t) => !t.soon)
-    .filter((t) => (!t.perm || s.can(t.perm)) && (!t.levels || t.levels.includes(level)))
-    .filter((t) => (seen.has(t.label) ? false : (seen.add(t.label), true)));
+  const tasks: { text: string; href: string; n: number }[] = [];
+  if (s.can('round.verify') && toVerify) tasks.push({ n: toVerify, text: 'round notes to review', href: '/verify/' });
+  if (s.can('round.write') && mine.length && dueMine) tasks.push({ n: dueMine, text: 'of your patients need today\'s round', href: '/rounds/' });
+  else if (s.can('round.write') && c?.rounds_pending) tasks.push({ n: c.rounds_pending, text: 'patients need today\'s round', href: '/rounds/' });
+  if (c?.critical) tasks.push({ n: c.critical, text: 'critical patients', href: '/census/' });
+
+  const groups: Group[] = [
+    { title: 'Clinical', tiles: [
+      { href: '/patients/?new=1', label: 'New patient', icon: 'addUser', perm: 'patient.write' },
+      { href: '/census/', label: 'Inpatient', icon: 'bed' },
+      { href: '/rounds/', label: 'Ward rounds', icon: 'rounds', badge: s.can('round.write') ? c?.rounds_pending : undefined },
+      { href: '/verify/', label: 'Review rounds', icon: 'rounds', perm: 'round.verify', badge: toVerify || undefined },
+      { href: '/patients/', label: 'Patient search', icon: 'patients' },
+    ] },
+    { title: 'Administration', tiles: [
+      { href: '/reports/', label: 'Downloads', icon: 'reports', perm: 'report.generate' },
+      { href: '/more/', label: 'More', icon: 'team' },
+    ] },
+  ];
 
   return (
     <div className="stack">
-      <div>
-        <h2 style={{ margin: 0, fontSize: 20 }}>Good {greeting()}, {displayName(s.staff?.full_name)}</h2>
-        <div className="row small" style={{ gap: 8 }}>
-          <span className="muted">{todayLabel()}</span>
-          <span className="badge navy">{s.roles.map(roleName).join(' · ')}</span>
+      <div className="home-top">
+        <div className="spread" style={{ alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ fontSize: 13, color: '#C9D6E8' }}>{todayLabel()}</div>
+            <div style={{ fontSize: 19, fontWeight: 700 }}>{s.staff?.full_name}</div>
+            <div style={{ fontSize: 12.5, color: '#C9D6E8' }}>{s.roles.map(roleName).join(' · ')} · {s.unit?.name}</div>
+          </div>
+          <Link href="/notifications/" className="bell" aria-label={`Notifications${live.data?.unread ? `, ${live.data.unread} unread` : ''}`}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0" /></svg>
+            {!!live.data?.unread && <span className="bell-n">{live.data.unread}</span>}
+          </Link>
+        </div>
+        <div className="today" style={{ background: 'transparent', padding: '10px 0 0' }}>
+          <div><b>{c?.total_admitted ?? '–'}</b><span>Inpatients</span></div>
+          <div className={c?.rounds_pending ? 'alert' : ''}><b>{c?.rounds_pending ?? '–'}</b><span>Rounds due</span></div>
+          <div className={c?.critical ? 'alert' : ''}><b>{c?.critical ?? '–'}</b><span>Critical</span></div>
+          <div><b>{c?.new_admissions ?? '–'}</b><span>New today</span></div>
         </div>
       </div>
 
-      <InstallApp />
-
-      <Link href="/census/" className="today">
-        <div><b>{c?.total_admitted ?? '–'}</b><span>Admitted</span></div>
-        <div className={c?.rounds_pending ? 'alert' : ''}><b>{c?.rounds_pending ?? '–'}</b><span>Rounds pending</span></div>
-        <div className={c?.critical ? 'alert' : ''}><b>{c?.critical ?? '–'}</b><span>Critical</span></div>
-        <div><b>{c?.awaiting_surgery ?? '–'}</b><span>Awaiting surgery</span></div>
-      </Link>
+      <div className="card" style={{ padding: 12 }}>
+        <div className="small" style={{ fontWeight: 700, color: 'var(--navy)', marginBottom: 6 }}>Pending tasks</div>
+        {tasks.length === 0 ? <div className="small muted">Nothing pending for you right now.</div> : (
+          <div className="stack" style={{ gap: 6 }}>
+            {tasks.map((t) => (
+              <Link key={t.text} href={t.href} className="spread small" style={{ color: 'inherit' }}>
+                <span><b style={{ color: 'var(--warn)' }}>{t.n}</b> {t.text}</span><span style={{ color: 'var(--teal)' }}>Open →</span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
       {live.error && <div className="msg err">{live.error}</div>}
 
-      {supervisor && s.can('round.verify') && (
-        <Link href="/verify/" className="card spread" style={{ color: 'inherit' }}>
-          <span><b>{toVerify}</b> round {toVerify === 1 ? 'entry' : 'entries'} today waiting for your verification</span>
-          <span className={`badge ${toVerify ? 'warn' : 'ok'}`}>{toVerify ? 'Review' : 'All clear'}</span>
-        </Link>
-      )}
-      {(level === 'resident' || level === 'intern') && (
-        <Link href="/rounds/" className="card spread" style={{ color: 'inherit' }}>
-          {mine.length ? (
-            <span><b>{mine.filter((p) => !p.rounds_today).length}</b> of your {mine.length} patients still need today&apos;s round</span>
-          ) : (
-            <span><b>{c?.rounds_pending ?? 0}</b> patients in the unit still need today&apos;s round</span>
-          )}
-          <span className="badge teal">Start rounds</span>
-        </Link>
-      )}
+      <InstallApp />
 
-      <div className="launcher">
-        {tiles.map((t) => t.soon ? (
-          <div key={t.label} className="tile soon" title={`Coming in ${t.soon}`}>
-            <span className="tile-icon"><Icon name={t.icon} size={28} /></span>
-            <span className="tile-label">{t.label}</span>
-            <span className="tile-soon">{t.soon}</span>
-          </div>
-        ) : (
-          <Link key={t.label} href={t.href} className="tile">
-            <span className="tile-icon"><Icon name={t.icon} size={28} /></span>
-            <span className="tile-label">{t.label}</span>
-          </Link>
-        ))}
-      </div>
+      {groups.map((g) => {
+        const tiles = g.tiles.filter((t) => !t.perm || s.can(t.perm));
+        if (!tiles.length) return null;
+        return (
+          <section key={g.title} className="stack" style={{ gap: 8 }}>
+            <h3 style={{ margin: 0 }}>{g.title}</h3>
+            <div className="launcher">
+              {tiles.map((t) => (
+                <Link key={t.label} href={t.href} className="tile">
+                  {!!t.badge && <span className="tile-badge">{t.badge}</span>}
+                  <span className="tile-icon"><Icon name={t.icon} size={28} /></span>
+                  <span className="tile-label">{t.label}</span>
+                </Link>
+              ))}
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
-}
-
-function displayName(n?: string) {
-  if (!n) return '';
-  const parts = n.replace(/^(dr|prof|mr|mrs|ms)\.?\s+/i, '').trim().split(/\s+/);
-  return /^dr\.?\s/i.test(n) ? `Dr. ${parts[0]}` : parts[0];
-}
-
-function greeting() {
-  const h = Number(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata', hour: 'numeric', hour12: false }));
-  return h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
 }

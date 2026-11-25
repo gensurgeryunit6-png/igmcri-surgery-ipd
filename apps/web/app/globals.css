@@ -206,3 +206,11 @@ a.bed:hover { border-color: var(--teal); text-decoration: none; }
 .ds-sign div { flex: 1; border-top: 1px solid #333; padding-top: 4px; font-size: 13px; min-height: 18px; }
 .ds-sign span { display: block; font-size: 11px; color: var(--muted); }
 @media print { .ds-head td { border-color: #888; } .ds-sec p { font-size: 11pt; } }
+
+/* home top section */
+.home-top { background: var(--navy); color: #fff; border-radius: 14px; padding: 14px 16px 12px; }
+.home-top .today div { border-right-color: rgba(255,255,255,.15); }
+.bell { position: relative; width: 44px; height: 44px; border-radius: 22px; background: var(--navy-2); color: #fff; display: flex; align-items: center; justify-content: center; }
+.bell:hover { text-decoration: none; }
+.bell-n { position: absolute; top: 2px; right: 0; min-width: 20px; height: 20px; border-radius: 10px; background: #b4530a; color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 5px; }
+.tile-badge { position: absolute; top: 8px; right: 10px; min-width: 20px; height: 20px; border-radius: 10px; background: #b4530a; color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 5px; }

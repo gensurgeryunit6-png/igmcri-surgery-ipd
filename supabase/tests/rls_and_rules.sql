@@ -163,17 +163,18 @@ select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
 select public.admit_patient((select id from public.patients where uhid = 'TEST-0003'), unit6, 'IP-103', bed_m1) from ctx;
 reset role;
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000f6');
-select public.add_ward_round(jsonb_build_object('admission_id', (select id from public.admissions where ip_number = 'IP-103'), 'clinical_status', 'stable'));
+select pg_temp.expect_error($q$select public.add_ward_round(jsonb_build_object('admission_id', (select id from public.admissions where ip_number = 'IP-103'), 'clinical_status', 'stable'))$q$, 'row-level security');
+select pg_temp.expect_error($q$insert into public.patients (institution_id, uhid, full_name, age_years, sex) select inst, 'I9', 'Intern Entry', 30, 'M' from ctx$q$, 'row-level security');
+do $$ begin if (select count(*) from public.v_inpatients) < 1 then raise exception 'intern cannot view inpatients'; end if; end $$;
 select pg_temp.expect_error($q$select public.admit_patient((select id from public.patients where uhid = 'TEST-0002'), unit6, 'IP-104', bed_m2) from ctx$q$, 'ipd.write');
 select pg_temp.expect_error($q$select public.discharge_patient((select id from public.admissions where ip_number = 'IP-103'))$q$, 'ipd.discharge');
-select pg_temp.expect_error($q$select public.verify_ward_round((select id from public.ward_round_entries where admission_id = (select id from public.admissions where ip_number = 'IP-103')))$q$, 'not found or already verified');
 select pg_temp.expect_error($q$insert into public.investigations (admission_id, name) select id, 'CBC' from public.admissions where ip_number = 'IP-103'$q$, 'row-level security');
 reset role;
 
--- 8. report log: intern may log own report, nurse sees only own rows, cannot log as someone else
-select pg_temp.as_user('00000000-0000-0000-0000-0000000000f6');
+-- 8. report log: PG may log own report, nurse sees only own rows, cannot log as someone else
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
 insert into public.report_log (unit_id, kind, format) select unit6, 'unit', 'print' from ctx;
-select pg_temp.expect_error($q$insert into public.report_log (unit_id, kind, format, generated_by) select unit6, 'unit', 'xlsx', '00000000-0000-0000-0000-0000000000a1' from ctx$q$, 'row-level security');
+select pg_temp.expect_error($q$insert into public.report_log (unit_id, kind, format, generated_by) select unit6, 'unit', 'xlsx', '00000000-0000-0000-0000-0000000000b2' from ctx$q$, 'row-level security');
 reset role;
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000c3');
 do $$ begin if (select count(*) from public.report_log) <> 0 then raise exception 'nurse sees others report log'; end if; end $$;
@@ -187,6 +188,9 @@ select pg_temp.as_user('00000000-0000-0000-0000-0000000000a7');
 select pg_temp.expect_error($q$update public.ward_beds set active = false where label = 'M1'$q$, 'has a patient in it');
 update public.ward_beds set active = false where label = 'M30';
 update public.unit_settings set morning_report_hour = 9;
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+select public.add_ward_round(jsonb_build_object('admission_id', (select id from public.admissions where ip_number = 'IP-103'), 'clinical_status', 'stable'));
 reset role;
 select private.take_ward_snapshot((select unit6 from ctx), private.today_ist());
 do $$ declare d jsonb; begin
@@ -205,7 +209,28 @@ select pg_temp.as_user('00000000-0000-0000-0000-0000000000d4');
 select pg_temp.expect_error($q$select public.save_ward_snapshot_now(unit6) from ctx$q$, 'report.generate');
 reset role;
 
--- 10. audit trail was written
+-- 10. spec roles: faculty has complete access; archive; notifications
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b2');
+do $$ begin if not private.has_perm((select unit6 from ctx), 'users.manage') then raise exception 'faculty lacks users.manage'; end if; end $$;
+select pg_temp.expect_error($q$select public.archive_patient((select id from public.patients where uhid = 'TEST-0003'), 'dup')$q$, 'is admitted');
+select pg_temp.expect_error($q$select public.archive_patient((select id from public.patients where uhid = 'TEST-0002'), 'x')$q$, 'reason');
+select public.archive_patient((select id from public.patients where uhid = 'TEST-0002'), 'Duplicate registration');
+do $$ begin if exists (select 1 from public.search_patients('Second')) then raise exception 'archived patient still searchable'; end if; end $$;
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+select pg_temp.expect_error($q$select public.archive_patient((select id from public.patients where uhid = 'TEST-0001'), 'no reason')$q$, 'patient.archive');
+insert into public.ward_round_amendments (entry_id, field, new_value, reason)
+select id, 'plan', 'Revised plan', 'Clarified plan' from public.ward_round_entries where admission_id = (select id from public.admissions where ip_number = 'IP-103') limit 1;
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b2');
+do $$ begin if (select count(*) from public.notifications where title = 'Ward-round note amended') < 1 then raise exception 'faculty not notified'; end if; end $$;
+update public.notifications set read_at = now();
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+do $$ begin if (select count(*) from public.notifications) <> 0 then raise exception 'PG sees others notifications or got own'; end if; end $$;
+reset role;
+
+-- 11. audit trail was written
 do $$ begin
   if (select count(*) from public.audit_logs where table_name = 'ward_round_entries') < 3 then raise exception 'audit missing'; end if;
 end $$;
