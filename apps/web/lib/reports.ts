@@ -166,3 +166,104 @@ export async function downloadXlsx(r: Report, fileName: string) {
   a.href = url; a.download = fileName; a.click();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
+
+// ---------------------------------------------------------------- workflow reports (live data only)
+export const WORKFLOW_REPORTS = [
+  { k: 'daily', label: 'Daily unit report', landscape: true },
+  { k: 'otday', label: 'OT lists for the day', landscape: true },
+  { k: 'preop', label: 'Pre-op checklist (inpatients awaiting surgery)', landscape: true },
+  { k: 'waitlist', label: 'Waiting list (Major, Minor, Endoscopy)', landscape: true },
+] as const;
+export type WorkflowKind = (typeof WORKFLOW_REPORTS)[number]['k'];
+export const isWorkflowKind = (k: string): k is WorkflowKind => WORKFLOW_REPORTS.some((r) => r.k === k);
+
+const SVC: Record<string, string> = { major: 'Major OT', minor: 'Minor OT', endoscopy: 'Endoscopy' };
+const yes = (ok: boolean, label: string) => `${ok ? '✓' : '✗'} ${label}`;
+type WRow = { id: string; list_type: string; priority: string; planned_procedure: string; diagnosis: string | null; planned_date: string | null;
+  status: string; contact_status: string; contact_attempts: number; preop_ready: boolean; pac_status: string; physician_status: string;
+  consent_status: string; blood_status: string; investigations_ok: boolean; full_name: string; uhid: string; age_years: number | null; sex: string;
+  phone: string | null; ip_number: string | null; is_admitted: boolean | null; bed: string | null; pg_name: string | null };
+type CRow = { procedure: string; diagnosis: string | null; anaesthesia: string | null; surgeon: string | null; status: string; status_reason: string | null;
+  procedure_done: string | null; manual_name: string | null; manual_age_sex: string | null; seq: number;
+  patients: { full_name: string; age_years: number | null; sex: string; uhid: string } | null; admissions: { ip_number: string } | null;
+  ot_lists: { service: string; session: string; ot_room: string } };
+
+export async function buildWorkflowReport(kind: WorkflowKind, unitId: string, unitName: string, date: string): Promise<Report> {
+  const subtitle = `${unitName} · ${fmtDate(`${date}T06:00:00Z`)}`;
+  const label = WORKFLOW_REPORTS.find((r) => r.k === kind)!.label;
+  const caseRows = async () => {
+    const r = await supabase.from('ot_cases').select('procedure, diagnosis, anaesthesia, surgeon, status, status_reason, procedure_done, manual_name, manual_age_sex, seq, patients(full_name, age_years, sex, uhid), admissions(ip_number), ot_lists!inner(service, session, ot_room, list_date, unit_id)')
+      .eq('ot_lists.unit_id', unitId).eq('ot_lists.list_date', date).order('seq');
+    if (r.error) throw new Error(r.error.message);
+    return (r.data ?? []) as unknown as CRow[];
+  };
+  const caseSection = (rows: CRow[], svc: string) => {
+    const list = rows.filter((c) => c.ot_lists.service === svc);
+    return { heading: `${SVC[svc]} · ${list.length}`, columns: ['No', 'Patient', 'IP/UHID', 'Diagnosis', 'Procedure', 'Anaesthesia', 'Surgeon', 'Status'],
+      rows: list.map((c, i) => [String(i + 1), c.patients ? `${c.patients.full_name} (${c.patients.age_years ?? '?'}/${c.patients.sex})` : `${c.manual_name ?? ''} (${c.manual_age_sex ?? ''})`,
+        c.admissions?.ip_number ? `IP ${c.admissions.ip_number}` : c.patients?.uhid ?? '', c.diagnosis ?? '', c.procedure_done ?? c.procedure, c.anaesthesia ?? '', c.surgeon ?? '',
+        c.status === 'planned' ? 'Planned' : c.status === 'done' ? 'Done' : `${c.status === 'postponed' ? 'Postponed' : 'Cancelled'}: ${c.status_reason ?? ''}`]) };
+  };
+
+  if (kind === 'otday') {
+    const rows = await caseRows();
+    return { title: label, subtitle, sections: ['major', 'minor', 'endoscopy'].map((s) => caseSection(rows, s)) };
+  }
+
+  if (kind === 'preop' || kind === 'waitlist') {
+    const r = await supabase.from('v_waiting_list').select('*').eq('unit_id', unitId).in('status', ['waiting', 'postponed', 'scheduled']).order('planned_date', { nullsFirst: false });
+    if (r.error) throw new Error(r.error.message);
+    const all = (r.data ?? []) as WRow[];
+    if (kind === 'preop') {
+      const list = all.filter((w) => w.is_admitted);
+      return { title: label, subtitle: `${unitName} · as of now`, sections: [{ heading: `${list.length} inpatients awaiting a procedure · ${list.filter((w) => !w.preop_ready).length} incomplete`,
+        columns: ['Bed', 'Patient', 'Procedure', 'Planned', 'Investigations', 'PAC', 'Physician', 'Consent', 'Blood', 'Responsible PG'],
+        rows: list.map((w) => [w.bed ?? '—', `${w.full_name} (${w.age_years ?? '?'}/${w.sex})\nIP ${w.ip_number ?? ''}`, `${SVC[w.list_type]}: ${w.planned_procedure}`,
+          w.planned_date ? fmtDate(w.planned_date) : '—', yes(w.investigations_ok, ''), w.pac_status.replace(/_/g, ' '), w.physician_status.replace(/_/g, ' '),
+          w.consent_status, w.blood_status.replace(/_/g, ' '), w.pg_name ?? '']) }] };
+    }
+    return { title: label, subtitle: `${unitName} · as of now`, sections: ['major', 'minor', 'endoscopy'].map((s) => {
+      const list = all.filter((w) => w.list_type === s);
+      return { heading: `${SVC[s]} · ${list.length}`, columns: ['Patient', 'UHID', 'Mobile', 'Procedure', 'Priority', 'Planned', 'Status', 'Call', 'Pre-op'],
+        rows: list.map((w) => [`${w.full_name} (${w.age_years ?? '?'}/${w.sex})`, w.uhid, w.phone ?? '', w.planned_procedure, w.priority, w.planned_date ? fmtDate(w.planned_date) : '—',
+          w.status, `${w.contact_status.replace(/_/g, ' ')}${w.contact_attempts ? ` (${w.contact_attempts})` : ''}`, w.preop_ready ? 'Ready' : 'Incomplete']) };
+    }) };
+  }
+
+  // daily unit report
+  const from = new Date(`${date}T00:00:00+05:30`).toISOString();
+  const to = new Date(new Date(`${date}T00:00:00+05:30`).getTime() + 864e5).toISOString();
+  const [d, cases, adm, dis, tasks] = await Promise.all([
+    fetchReportData(unitId, date),
+    caseRows(),
+    supabase.from('admissions').select('ip_number, admitted_at, admission_type, patients(full_name, age_years, sex)').eq('unit_id', unitId).gte('admitted_at', from).lt('admitted_at', to).order('admitted_at'),
+    supabase.from('admissions').select('ip_number, discharged_at, status, patients(full_name, age_years, sex)').eq('unit_id', unitId).gte('discharged_at', from).lt('discharged_at', to).order('discharged_at'),
+    supabase.from('care_tasks').select('description, status, due_on, admission_id').eq('unit_id', unitId).in('status', ['open', 'in_progress']).order('created_at'),
+  ]);
+  const c = d.census;
+  const pts = d.pts;
+  const map = new Map(pts.map((p) => [p.admission_id, p]));
+  const fig: [string, number | undefined][] = [['Total inpatients', c?.total_admitted], ['New admissions', c?.new_admissions], ['Discharges', c?.discharged_today],
+    ['Male Surgical Ward', c?.male_ward], ['Female Surgical Ward', c?.female_ward], ['Special Ward', c?.special_ward], ['Emergency / other beds', c?.other_beds],
+    ['Awaiting surgery (pre-op)', c?.awaiting_surgery], ['Post-operative', c?.postoperative], ['Critical', c?.critical], ['Planned discharge', c?.planned_discharge]];
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const crit = buildFromData('critical', d, unitName, date);
+  type A = { ip_number: string; admitted_at?: string; discharged_at?: string; admission_type?: string; status?: string; patients: { full_name: string; age_years: number | null; sex: string } };
+  return { title: label, subtitle, sections: [
+    { heading: 'Census', columns: ['Measure', 'Count'], rows: fig.map(([k, v]) => [k, String(v ?? '—')]),
+      note: date !== today ? 'Census figures are as of now, not the selected date.' : undefined },
+    { heading: `New admissions · ${(adm.data ?? []).length}`, columns: ['IP', 'Patient', 'Type', 'Time'],
+      rows: ((adm.data ?? []) as unknown as A[]).map((a) => [a.ip_number, `${a.patients.full_name} (${a.patients.age_years ?? '?'}/${a.patients.sex})`, a.admission_type ?? '', fmtDateTime(a.admitted_at)]) },
+    { heading: `Discharges · ${(dis.data ?? []).length}`, columns: ['IP', 'Patient', 'Outcome', 'Time'],
+      rows: ((dis.data ?? []) as unknown as A[]).map((a) => [a.ip_number, `${a.patients.full_name} (${a.patients.age_years ?? '?'}/${a.patients.sex})`, (a.status ?? '').replace(/_/g, ' '), fmtDateTime(a.discharged_at)]) },
+    caseSection(cases, 'major'), caseSection(cases, 'minor'), caseSection(cases, 'endoscopy'),
+    { heading: `Post-operative patients · ${pts.filter((p) => p.is_postop).length}`, columns: ['Bed', 'Patient', 'Diagnosis', 'POD', 'Status'],
+      rows: pts.filter((p) => p.is_postop).map((p) => [bedLabel(p), who(p), p.diagnosis ?? '—', p.postop_day != null ? String(p.postop_day) : 'date not verified', p.last_status ? statusLabel(p.last_status) : '—']) },
+    { heading: `Pending reports · ${d.investigations.length}`, columns: ['Bed', 'Patient', 'Investigation', 'Ordered'],
+      rows: d.investigations.filter((i) => map.has(i.admission_id)).map((i) => { const p = map.get(i.admission_id)!; return [bedLabel(p), who(p), i.name, fmtDate(i.ordered_at)]; }) },
+    { heading: `Pending tasks · ${(tasks.data ?? []).length}`, columns: ['Task', 'Patient', 'Status', 'Due'],
+      rows: ((tasks.data ?? []) as { description: string; status: string; due_on: string | null; admission_id: string | null }[]).map((t) => [t.description,
+        t.admission_id && map.has(t.admission_id) ? `${bedLabel(map.get(t.admission_id)!)} ${map.get(t.admission_id)!.full_name}` : '—', t.status === 'in_progress' ? 'In progress' : 'Pending', t.due_on ? fmtDate(t.due_on) : '']) },
+    { ...crit.sections[0], heading: `Important clinical updates · ${crit.sections[0].rows.length} critical, worsening or under close monitoring` },
+  ] };
+}

@@ -4,6 +4,7 @@ import { useSession } from '@/lib/session';
 import { supabase } from '@/lib/supabase';
 import { useLive, must, LIVE_TABLES, type Census } from '@/lib/data';
 import { todayLabel } from '@/lib/format';
+import { todayIst } from '@/lib/workflow';
 import { Icon } from '@/components/Icon';
 import { roleName } from '@/components/Shell';
 import { InstallApp } from '@/components/InstallApp';
@@ -22,35 +23,65 @@ export default function Home() {
   const me = s.session?.user.id;
 
   const live = useLive(async () => {
-    const [c, pts, n] = await Promise.all([
+    const today = todayIst();
+    const [c, pts, n, lists, wait, inv, tasks, mePeople] = await Promise.all([
       must(supabase.from('v_census_today').select('*').eq('unit_id', unitId!).maybeSingle()),
-      must(supabase.from('v_inpatients').select('admission_id, assigned_pg_id, rounds_today, unverified_today').eq('unit_id', unitId!)),
+      must(supabase.from('v_inpatients').select('admission_id, assigned_pg_id, rounds_today, unverified_today, awaiting_surgery, preop_ready').eq('unit_id', unitId!)),
       must(supabase.from('notifications').select('id', { count: 'exact', head: false }).is('read_at', null).limit(50)),
+      must(supabase.from('ot_lists').select('service, ot_cases(status)').eq('unit_id', unitId!).eq('list_date', today)),
+      must(supabase.from('surgery_waitlist').select('id, contact_status').eq('unit_id', unitId!).in('status', ['waiting', 'postponed'])),
+      must(supabase.from('investigations').select('id').eq('unit_id', unitId!).eq('status', 'pending')),
+      must(supabase.from('care_tasks').select('id, status, assigned_person_id').eq('unit_id', unitId!).in('status', ['open', 'in_progress', 'done'])),
+      must(supabase.from('unit_personnel').select('id').eq('unit_id', unitId!).eq('user_id', me!)),
     ]);
-    return { c: c as Census | null, pts: pts as { assigned_pg_id: string | null; rounds_today: number; unverified_today: number }[], unread: (n as unknown[]).length };
-  }, [...LIVE_TABLES, 'notifications'], [unitId]);
+    const mine = new Set((mePeople as { id: string }[]).map((x) => x.id));
+    const otToday = (sv: string) => (lists as { service: string; ot_cases: { status: string }[] }[]).filter((l) => l.service === sv)
+      .reduce((k, l) => k + l.ot_cases.filter((x) => x.status !== 'postponed' && x.status !== 'cancelled').length, 0);
+    const t = tasks as { status: string; assigned_person_id: string | null }[];
+    return {
+      c: c as Census | null, unread: (n as unknown[]).length,
+      pts: pts as { assigned_pg_id: string | null; rounds_today: number; unverified_today: number; awaiting_surgery: boolean; preop_ready: boolean | null }[],
+      major: otToday('major'), minor: otToday('minor'), endo: otToday('endoscopy'),
+      waiting: (wait as unknown[]).length, toCall: (wait as { contact_status: string }[]).filter((w) => w.contact_status === 'not_contacted').length,
+      pendingTests: (inv as unknown[]).length,
+      myTasks: t.filter((x) => x.status !== 'done' && mine.has(x.assigned_person_id ?? '')).length,
+      toVerifyTasks: t.filter((x) => x.status === 'done').length,
+    };
+  }, [...LIVE_TABLES, 'notifications', 'ot_lists', 'ot_cases', 'care_tasks', 'investigations'], [unitId]);
 
   const c = live.data?.c;
   const pts = live.data?.pts ?? [];
   const mine = pts.filter((p) => p.assigned_pg_id === me);
   const toVerify = pts.reduce((n, p) => n + p.unverified_today, 0);
   const dueMine = mine.filter((p) => !p.rounds_today).length;
+  const preopCount = pts.filter((p) => p.awaiting_surgery).length;
 
   const tasks: { text: string; href: string; n: number }[] = [];
   if (s.can('round.verify') && toVerify) tasks.push({ n: toVerify, text: 'round notes to review', href: '/verify/' });
   if (s.can('round.write') && mine.length && dueMine) tasks.push({ n: dueMine, text: 'of your patients need today\'s round', href: '/rounds/' });
   else if (s.can('round.write') && c?.rounds_pending) tasks.push({ n: c.rounds_pending, text: 'patients need today\'s round', href: '/rounds/' });
   if (c?.critical) tasks.push({ n: c.critical, text: 'critical patients', href: '/census/' });
+  const d = live.data;
+  if (d?.myTasks) tasks.push({ n: d.myTasks, text: 'tasks assigned to you', href: '/tasks/' });
+  if (s.can('task.verify') && d?.toVerifyTasks) tasks.push({ n: d.toVerifyTasks, text: 'completed tasks to verify', href: '/tasks/' });
+  const preopDue = pts.filter((p) => p.awaiting_surgery && p.preop_ready === false).length;
+  if (s.can('ot.prepare') && preopDue) tasks.push({ n: preopDue, text: 'inpatients with pre-op work-up incomplete', href: '/waiting/' });
+  if (s.can('ot.prepare') && d?.toCall) tasks.push({ n: d.toCall, text: 'waiting-list patients not called yet', href: '/waiting/' });
 
   const groups: Group[] = [
     { title: 'Clinical', tiles: [
+      { href: '/opd/', label: 'OPD', icon: 'opd' },
       { href: '/patients/?new=1', label: 'New patient', icon: 'addUser', perm: 'patient.write' },
       { href: '/census/', label: 'Inpatient', icon: 'bed' },
       { href: '/rounds/', label: 'Ward rounds', icon: 'rounds', badge: s.can('round.write') ? c?.rounds_pending : undefined },
       { href: '/verify/', label: 'Review rounds', icon: 'rounds', perm: 'round.verify', badge: toVerify || undefined },
+      { href: '/tasks/', label: 'Tasks', icon: 'census', badge: d?.myTasks || undefined },
       { href: '/patients/', label: 'Patient search', icon: 'patients' },
     ] },
     { title: 'Operation theatre', tiles: [
+      { href: '/waiting/', label: 'Waiting list', icon: 'patients', badge: d?.waiting || undefined },
+      { href: '/ot/', label: 'OT lists', icon: 'ot' },
+      { href: '/ot/?s=endoscopy', label: 'Endoscopy', icon: 'scope' },
       { href: OPD_MINOR_OT_URL, label: 'OPD minor OT', icon: 'minor', external: true },
     ] },
     { title: 'Administration', tiles: [
@@ -79,6 +110,20 @@ export default function Home() {
           <div className={c?.rounds_pending ? 'alert' : ''}><b>{c?.rounds_pending ?? '–'}</b><span>Rounds due</span></div>
           <div className={c?.critical ? 'alert' : ''}><b>{c?.critical ?? '–'}</b><span>Critical</span></div>
           <div><b>{c?.new_admissions ?? '–'}</b><span>New today</span></div>
+        </div>
+      </div>
+
+      <div className="card" style={{ padding: 12 }}>
+        <div className="small" style={{ fontWeight: 700, color: 'var(--navy)', marginBottom: 6 }}>Today in the unit</div>
+        <div className="countgrid">
+          {[
+            { n: c?.male_ward, l: 'Male ward', h: '/census/' }, { n: c?.female_ward, l: 'Female ward', h: '/census/' },
+            { n: c?.special_ward, l: 'Special ward', h: '/census/' }, { n: preopCount, l: 'Pre-op', h: '/waiting/' },
+            { n: d?.major, l: 'Major OT today', h: '/ot/' }, { n: d?.minor, l: 'Minor OT today', h: '/ot/?s=minor' },
+            { n: d?.endo, l: 'Endoscopy today', h: '/ot/?s=endoscopy' }, { n: c?.postoperative, l: 'Post-op', h: '/census/' },
+            { n: d?.pendingTests, l: 'Reports pending', h: '/tasks/?v=tests' }, { n: d?.waiting, l: 'Waiting list', h: '/waiting/' },
+            { n: c?.planned_discharge, l: 'Planned discharge', h: '/census/' }, { n: d?.myTasks, l: 'My tasks', h: '/tasks/' },
+          ].map((x) => <Link key={x.l} href={x.h} className="count"><b>{x.n ?? '–'}</b><span>{x.l}</span></Link>)}
         </div>
       </div>
 

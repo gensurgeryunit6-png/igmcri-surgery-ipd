@@ -43,7 +43,7 @@ function RoundView() {
     const a = ids.length ? await supabase.from('ward_round_amendments')
       .select('*, author:staff!ward_round_amendments_amended_by_fkey(full_name)').in('entry_id', ids) : { data: [] };
     setAmends((a.data as Amendment[]) ?? []);
-    const t = await supabase.from('care_tasks').select('id, kind, description, created_at').eq('admission_id', admissionId).eq('status', 'open').order('created_at');
+    const t = await supabase.from('care_tasks').select('id, kind, description, created_at').eq('admission_id', admissionId).in('status', ['open', 'in_progress']).order('created_at');
     setTasks((t.data as Task[]) ?? []);
     // Next patient in the same ward who still needs today's round.
     if (p.data) {
