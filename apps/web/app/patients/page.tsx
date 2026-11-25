@@ -42,7 +42,7 @@ function Patients() {
 
       {showNew ? (
         <NewPatient onCancel={() => { setShowNew(false); router.replace('/patients/'); }}
-          onCreated={(id) => router.push(`/patient/?id=${id}`)} />
+          onCreated={(id) => router.push(params.get('next') === 'opd' ? `/opd-visit/?p=${id}` : `/patient/?id=${id}`)} />
       ) : (
         <>
           <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name, UHID, IP number or phone (at least 2 characters)" />
@@ -71,7 +71,7 @@ const COMORBIDITIES = ['Diabetes mellitus', 'Hypertension', 'Coronary artery dis
 
 function NewPatient({ onCancel, onCreated }: { onCancel: () => void; onCreated: (id: string) => void }) {
   const s = useSession();
-  const [f, setF] = useState({ uhid: '', full_name: '', age_years: '', sex: '', phone: '',
+  const [f, setF] = useState({ uhid: '', op_number: '', full_name: '', age_years: '', sex: '', phone: '', phone_2: '',
     emergency_contact_name: '', emergency_contact_phone: '', allergy_status: '', allergies: '' });
   const [como, setComo] = useState<string[]>([]);
   const [other, setOther] = useState('');
@@ -105,7 +105,7 @@ function NewPatient({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
     const { data, error } = await supabase.from('patients').insert({
       institution_id: s.institutionId, uhid: f.uhid.trim(), full_name: f.full_name.trim(),
       age_years: f.age_years ? Number(f.age_years) : null, age_recorded_on: f.age_years ? new Date().toISOString().slice(0, 10) : null,
-      sex: f.sex, phone: f.phone.trim() || null,
+      sex: f.sex, phone: f.phone.trim() || null, phone_2: f.phone_2.trim() || null, op_number: f.op_number.trim() || null,
       emergency_contact_name: f.emergency_contact_name.trim() || null, emergency_contact_phone: f.emergency_contact_phone.trim() || null,
       allergy_status: f.allergy_status, allergies: f.allergy_status === 'yes' ? f.allergies.trim() : null, comorbidities,
     }).select('id').single();
@@ -116,10 +116,11 @@ function NewPatient({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
   return (
     <form className="card stack" onSubmit={save}>
       <h2>Register new patient</h2>
-      <div className="grid g3">
+      <div className="grid g2">
         <div className="field"><label className="req">UHID</label><input required value={f.uhid} onChange={set('uhid')} autoFocus /></div>
-        <div className="field" style={{ gridColumn: 'span 2' }}><label className="req">Patient name</label><input required minLength={2} value={f.full_name} onChange={set('full_name')} /></div>
+        <div className="field"><label>OP number</label><input value={f.op_number} onChange={set('op_number')} /></div>
       </div>
+      <div className="field"><label className="req">Patient name</label><input required minLength={2} value={f.full_name} onChange={set('full_name')} /></div>
       {dups.length > 0 && (
         <div className={`msg ${sameUhid ? 'err' : 'info'}`}>
           <b>{sameUhid ? 'This UHID is already registered.' : 'Possible existing record:'}</b>
@@ -134,8 +135,11 @@ function NewPatient({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
         <div className="field"><label className="req">Sex</label>
           <select required value={f.sex} onChange={set('sex')}><option value="">Select</option><option value="M">Male</option><option value="F">Female</option><option value="O">Other</option></select></div>
       </div>
-      <div className="grid g3">
-        <div className="field"><label>Phone</label><input value={f.phone} onChange={set('phone')} inputMode="tel" /></div>
+      <div className="grid g2">
+        <div className="field"><label>Mobile 1</label><input value={f.phone} onChange={set('phone')} inputMode="tel" placeholder="Needed to book a procedure" /></div>
+        <div className="field"><label>Mobile 2</label><input value={f.phone_2} onChange={set('phone_2')} inputMode="tel" /></div>
+      </div>
+      <div className="grid g2">
         <div className="field"><label>Emergency contact name</label><input value={f.emergency_contact_name} onChange={set('emergency_contact_name')} /></div>
         <div className="field"><label>Emergency contact phone</label><input value={f.emergency_contact_phone} onChange={set('emergency_contact_phone')} inputMode="tel" /></div>
       </div>

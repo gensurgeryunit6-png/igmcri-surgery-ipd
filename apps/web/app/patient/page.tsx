@@ -8,15 +8,19 @@ import { fmtDate, fmtDateTime, ageSex, nowLocalInput, istInputToIso, STATUS_LABE
 import { BedPicker } from '@/components/BedPicker';
 import { StatusBadge, AllergyField } from '@/components/ui';
 import { usePersonnel, lastPick, savePick } from '@/lib/personnel';
+import { BookingForm } from '@/components/BookingForm';
+import { InvestigationRow, type Inv } from '@/components/InvestigationRow';
+import { serviceLabel, BOOKING_STATUS, CASE_STATUS } from '@/lib/workflow';
 import { Photos } from '@/components/Photos';
 
 type Patient = { id: string; uhid: string; full_name: string; age_years: number | null; sex: string;
-  phone: string | null; emergency_contact_name: string | null; emergency_contact_phone: string | null;
+  phone: string | null; phone_2: string | null; op_number: string | null; emergency_contact_name: string | null; emergency_contact_phone: string | null;
   allergy_status: 'yes' | 'no' | null; allergies: string | null; comorbidities: string[]; created_at: string };
 type Admission = { id: string; ip_number: string; admitted_at: string; admission_type: string; status: string; discharged_at: string | null;
   planned_discharge_on: string | null; discharge_note: string | null; consultant_id: string | null; assigned_pg_id: string | null;
   consultant: { full_name: string } | null; pg: { full_name: string } | null;
-  cp: { full_name: string } | null; pgp: { full_name: string } | null };
+  cp: { full_name: string } | null; pgp: { full_name: string } | null;
+  asst_prof_person_id: string | null; intern_person_id: string | null; pg_person_id: string | null; consultant_person_id: string | null };
 
 export default function PatientPage() { return <Suspense><PatientView /></Suspense>; }
 
@@ -52,12 +56,14 @@ function PatientView() {
             <h2 style={{ fontSize: 20, margin: 0 }}>{p.full_name}</h2>
             <div className="row small" style={{ gap: 14 }}>
               <span>UHID <b>{p.uhid}</b></span><span>{ageSex(p.age_years, p.sex)}</span>
-              {p.phone && <span>{p.phone}</span>}
+              {p.op_number && <span>OP {p.op_number}</span>}
+              {p.phone && <a href={`tel:${p.phone}`}>{p.phone}</a>}{p.phone_2 && <a href={`tel:${p.phone_2}`}>{p.phone_2}</a>}
               <span>Allergies: {p.allergy_status === 'yes' ? 'Yes' : p.allergy_status === 'no' ? 'No' : 'not recorded'}</span>
             </div>
           </div>
           <div className="row" style={{ gap: 6 }}>
             {s.can('patient.write') && !editing && <button className="ghost" onClick={() => setEditing(true)}>Edit details</button>}
+            {s.can('patient.write') && <Link className="btn ghost" href={`/opd-visit/?p=${p.id}`}>OPD visit</Link>}
             {s.can('patient.archive') && !active && <button className="danger" onClick={async () => {
               const reason = prompt('Reason for removing this patient record (e.g. duplicate registration). The record is archived, not erased, and kept in the audit log.');
               if (!reason) return;
@@ -76,7 +82,7 @@ function PatientView() {
       </div>
 
       <div className="tabs">
-        {TABS.filter((t) => active || ['admission', 'photos', 'history'].includes(t.key)).map((t) => (
+        {TABS.filter((t) => active || ['admission', 'surgery', 'photos', 'history'].includes(t.key)).map((t) => (
           <button key={t.key} className={tab === t.key ? 'on' : ''} onClick={() => setTab(t.key)}>{t.label}</button>
         ))}
       </div>
@@ -85,7 +91,7 @@ function PatientView() {
         : s.can('ipd.write') ? <AdmitForm patient={p} onDone={load} />
         : <div className="card muted">Not currently admitted.</div>)}
       {active && tab === 'diagnosis' && <Diagnoses admissionId={active.id} />}
-      {active && tab === 'surgery' && <Surgeries admissionId={active.id} patientId={p.id} />}
+      {tab === 'surgery' && <Surgeries admissionId={active?.id ?? null} patient={p} />}
       {active && tab === 'tests' && <Investigations admissionId={active.id} />}
       {active && tab === 'medicines' && <Medications admissionId={active.id} />}
       {active && tab === 'rounds' && <Rounds admissionId={active.id} />}
@@ -107,7 +113,7 @@ function PatientView() {
 }
 
 const TABS = [
-  { key: 'admission', label: 'Admission' }, { key: 'diagnosis', label: 'Diagnosis' }, { key: 'surgery', label: 'Surgery' },
+  { key: 'admission', label: 'Admission' }, { key: 'diagnosis', label: 'Diagnosis' }, { key: 'surgery', label: 'Procedures' },
   { key: 'tests', label: 'Investigations' }, { key: 'medicines', label: 'Medicines' }, { key: 'rounds', label: 'Ward rounds' },
   { key: 'photos', label: 'Photos' },
   { key: 'history', label: 'History' },
@@ -116,6 +122,7 @@ const TABS = [
 // ---------------------------------------------------------------- edit patient
 function EditPatient({ p, onDone }: { p: Patient; onDone: () => void }) {
   const [f, setF] = useState({ full_name: p.full_name, age_years: p.age_years?.toString() ?? '', sex: p.sex, phone: p.phone ?? '',
+    phone_2: p.phone_2 ?? '', op_number: p.op_number ?? '',
     allergy_status: p.allergy_status ?? (p.allergies ? 'yes' : ''), allergies: p.allergies ?? '', emergency_contact_name: p.emergency_contact_name ?? '',
     emergency_contact_phone: p.emergency_contact_phone ?? '', comorbidities: p.comorbidities.join(', ') });
   const [err, setErr] = useState('');
@@ -125,6 +132,7 @@ function EditPatient({ p, onDone }: { p: Patient; onDone: () => void }) {
     if (!f.allergy_status) { setErr('Choose Yes or No for allergies.'); return; }
     const { error } = await supabase.from('patients').update({
       full_name: f.full_name.trim(), age_years: f.age_years ? Number(f.age_years) : null, sex: f.sex, phone: f.phone || null,
+      phone_2: f.phone_2.trim() || null, op_number: f.op_number.trim() || null,
       allergy_status: f.allergy_status, allergies: f.allergy_status === 'yes' ? f.allergies.trim() || null : null,
       emergency_contact_name: f.emergency_contact_name || null, emergency_contact_phone: f.emergency_contact_phone || null,
       comorbidities: f.comorbidities.split(',').map((x) => x.trim()).filter(Boolean),
@@ -140,7 +148,11 @@ function EditPatient({ p, onDone }: { p: Patient; onDone: () => void }) {
         <div className="field"><label>Sex</label><select value={f.sex} onChange={set('sex')}><option value="M">Male</option><option value="F">Female</option><option value="O">Other</option></select></div>
       </div>
       <div className="grid g3">
-        <div className="field"><label>Phone</label><input value={f.phone} onChange={set('phone')} /></div>
+        <div className="field"><label>Mobile 1</label><input value={f.phone} onChange={set('phone')} /></div>
+        <div className="field"><label>Mobile 2</label><input value={f.phone_2} onChange={set('phone_2')} /></div>
+        <div className="field"><label>OP number</label><input value={f.op_number} onChange={set('op_number')} /></div>
+      </div>
+      <div className="grid g2">
         <div className="field"><label>Emergency contact</label><input value={f.emergency_contact_name} onChange={set('emergency_contact_name')} /></div>
         <div className="field"><label>Emergency phone</label><input value={f.emergency_contact_phone} onChange={set('emergency_contact_phone')} /></div>
       </div>
@@ -288,6 +300,7 @@ function ActiveAdmission({ a, onChange }: { a: Admission; onChange: () => void }
         <div className="grid g3 small">
           <div><label>Consultant</label>{(a.cp ?? a.consultant)?.full_name ?? '—'}</div>
           <div><label>Assigned PG</label>{(a.pgp ?? a.pg)?.full_name ?? '—'}</div>
+          <Team a={a} onChange={onChange} />
           <div><label>Planned discharge</label>
             {s.can('ipd.write') ? (
               <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
@@ -379,51 +392,77 @@ function Diagnoses({ admissionId }: { admissionId: string }) {
   );
 }
 
-function Surgeries({ admissionId, patientId }: { admissionId: string; patientId: string }) {
+function Surgeries({ admissionId, patient }: { admissionId: string | null; patient: Patient }) {
   const s = useSession();
-  type Row = { id: string; surgery_date: string; procedure_done: string; urgency: string; surgeon: string | null; verified_at: string | null };
-  const { rows, load } = usePanel<Row>('surgeries', admissionId, '*', 'surgery_date');
-  const wl = usePanel<{ id: string; planned_procedure: string; list_type: string; status: string; planned_date: string | null }>('surgery_waitlist', admissionId);
-  const [mode, setMode] = useState<'' | 'record' | 'list'>('');
-  const [f, setF] = useState({ date: new Date().toISOString().slice(0, 10), proc: '', urgency: 'elective', surgeon: '', type: 'major', planned: '' });
+  type Row = { id: string; surgery_date: string; procedure_done: string; urgency: string; surgeon: string | null; findings: string | null; verified_at: string | null };
+  type Bk = { id: string; list_type: string; planned_procedure: string; status: string; planned_date: string | null; preop_ready: boolean; status_reason: string | null };
+  type Cs = { id: string; procedure: string; procedure_done: string | null; status: string; findings: string | null; postop_diagnosis: string | null; status_reason: string | null; ot_lists: { list_date: string; service: string } | null };
+  const [rows, setRows] = useState<Row[]>([]);
+  const [bks, setBks] = useState<Bk[]>([]);
+  const [cases, setCases] = useState<Cs[]>([]);
+  const [mode, setMode] = useState<'' | 'record' | 'book'>('');
+  const [f, setF] = useState({ date: new Date().toISOString().slice(0, 10), proc: '', urgency: 'emergency', surgeon: '' });
   const [err, setErr] = useState('');
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
-  const done = (error: any) => { if (error) setErr(friendlyError(error)); else { setErr(''); setMode(''); load(); wl.load(); } };
+  const load = useCallback(async () => {
+    const [b, c, r] = await Promise.all([
+      supabase.from('surgery_waitlist').select('id, list_type, planned_procedure, status, planned_date, preop_ready, status_reason').eq('patient_id', patient.id).order('created_at', { ascending: false }),
+      supabase.from('ot_cases').select('id, procedure, procedure_done, status, findings, postop_diagnosis, status_reason, ot_lists(list_date, service)').eq('patient_id', patient.id).order('created_at', { ascending: false }),
+      admissionId ? supabase.from('surgeries').select('id, surgery_date, procedure_done, urgency, surgeon, findings, verified_at').eq('admission_id', admissionId).order('surgery_date', { ascending: false }) : Promise.resolve({ data: [] }),
+    ]);
+    setBks((b.data as Bk[]) ?? []); setCases((c.data as unknown as Cs[]) ?? []); setRows((r.data as Row[]) ?? []);
+  }, [patient.id, admissionId]);
+  useEffect(() => { load(); }, [load]);
+  const done = (error: unknown) => { if (error) setErr(friendlyError(error)); else { setErr(''); setMode(''); load(); } };
+  const open = bks.filter((b) => ['waiting', 'scheduled', 'postponed'].includes(b.status));
 
   return (
-    <div className="card stack">
-      <h3>Surgery</h3>
-      {wl.rows.filter((w) => ['waiting', 'scheduled', 'postponed'].includes(w.status)).map((w) => (
-        <div key={w.id} className="small"><span className="badge teal">Awaiting · {w.list_type}</span> {w.planned_procedure} {w.planned_date && <span className="muted">· planned {fmtDate(w.planned_date)}</span>}</div>
-      ))}
-      {rows.length === 0 && wl.rows.length === 0 && <p className="muted small">No surgery recorded or planned.</p>}
-      {rows.map((r) => (
-        <div key={r.id} className="small spread">
-          <span><b>{fmtDate(r.surgery_date)}</b> · {r.procedure_done} <span className="muted">({r.urgency}{r.surgeon ? `, ${r.surgeon}` : ''})</span></span>
-          {r.verified_at ? <span className="badge ok">Verified</span>
-            : s.can('round.verify') ? <button className="ghost" style={{ padding: '4px 10px' }} onClick={async () => done((await supabase.from('surgeries').update({ verified_at: new Date().toISOString(), verified_by: s.session!.user.id }).eq('id', r.id)).error)}>Verify date</button>
-            : <span className="badge warn">Unverified</span>}
-        </div>
-      ))}
-      <p className="muted small" style={{ margin: 0 }}>Postoperative day counts from the verified surgery date. Full OT scheduling arrives in Phase 5.</p>
-      {s.can('ipd.write') && mode === '' && <div className="row"><button className="ghost" onClick={() => setMode('list')}>Add to waiting list</button><button className="ghost" onClick={() => setMode('record')}>Record surgery done</button></div>}
-      {mode === 'list' && (
-        <form className="stack" onSubmit={async (e) => { e.preventDefault(); done((await supabase.from('surgery_waitlist').insert({ patient_id: patientId, admission_id: admissionId, unit_id: s.unit!.id, list_type: f.type, planned_procedure: f.proc.trim(), planned_date: f.planned || null })).error); }}>
-          <div className="grid g3"><div className="field" style={{ gridColumn: 'span 2' }}><label className="req">Planned procedure</label><input required value={f.proc} onChange={set('proc')} /></div>
-            <div className="field"><label>List</label><select value={f.type} onChange={set('type')}><option value="major">Major OT</option><option value="minor">Minor OT</option><option value="emergency">Emergency</option></select></div></div>
-          <div className="field"><label>Planned date</label><input type="date" value={f.planned} onChange={set('planned')} /></div>
-          <div className="row"><button>Add</button><button type="button" className="ghost" onClick={() => setMode('')}>Cancel</button></div>
-        </form>
-      )}
-      {mode === 'record' && (
-        <form className="stack" onSubmit={async (e) => { e.preventDefault(); done((await supabase.from('surgeries').insert({ admission_id: admissionId, surgery_date: f.date, procedure_done: f.proc.trim(), urgency: f.urgency, surgeon: f.surgeon || null })).error); }}>
-          <div className="grid g2"><div className="field"><label className="req">Date</label><input type="date" required value={f.date} onChange={set('date')} /></div>
-            <div className="field"><label>Urgency</label><select value={f.urgency} onChange={set('urgency')}><option value="elective">Elective</option><option value="emergency">Emergency</option></select></div></div>
-          <div className="field"><label className="req">Procedure done</label><input required value={f.proc} onChange={set('proc')} /></div>
-          <div className="field"><label>Operating surgeon</label><input value={f.surgeon} onChange={set('surgeon')} /></div>
-          <div className="row"><button>Save</button><button type="button" className="ghost" onClick={() => setMode('')}>Cancel</button></div>
-        </form>
-      )}
+    <div className="stack">
+      <div className="card stack" style={{ gap: 6 }}>
+        <h3 style={{ margin: 0 }}>Waiting list</h3>
+        {open.length === 0 && <p className="muted small" style={{ margin: 0 }}>Not booked for any procedure.</p>}
+        {open.map((b) => (
+          <Link key={b.id} href={`/booking/?id=${b.id}`} className="spread small" style={{ color: 'inherit' }}>
+            <span><b>{serviceLabel(b.list_type)}</b> · {b.planned_procedure}{b.planned_date ? <span className="muted"> · {fmtDate(b.planned_date)}</span> : null}</span>
+            <span className="row" style={{ gap: 4 }}><span className={`badge ${b.preop_ready ? 'ok' : 'warn'}`}>{b.preop_ready ? 'Pre-op ready' : 'Pre-op due'}</span><span className="badge teal">{BOOKING_STATUS[b.status]}</span></span>
+          </Link>
+        ))}
+        {s.can('ot.prepare') && mode !== 'book' && <button className="ghost" onClick={() => setMode('book')}>Book a procedure</button>}
+      </div>
+      {mode === 'book' && <BookingForm patientId={patient.id} phone={patient.phone} admissionId={admissionId} onDone={() => { setMode(''); load(); }} onCancel={() => setMode('')} />}
+
+      <div className="card stack" style={{ gap: 6 }}>
+        <h3 style={{ margin: 0 }}>Operations and procedures</h3>
+        {cases.length === 0 && rows.length === 0 && <p className="muted small" style={{ margin: 0 }}>None yet.</p>}
+        {cases.map((c) => (
+          <div key={c.id} className="small" style={{ borderBottom: '1px solid #edf0f4', padding: '4px 0' }}>
+            <div className="spread"><span><b>{c.ot_lists ? fmtDate(c.ot_lists.list_date) : ''}</b> · {serviceLabel(c.ot_lists?.service ?? '')} · {c.procedure_done ?? c.procedure}</span>
+              <span className={`badge ${c.status === 'done' ? 'ok' : c.status === 'planned' ? 'teal' : 'warn'}`}>{CASE_STATUS[c.status]}</span></div>
+            {c.findings && <div className="muted">Findings: {c.findings}</div>}
+            {c.postop_diagnosis && <div className="muted">Post-op diagnosis: {c.postop_diagnosis}</div>}
+            {c.status_reason && <div className="muted">Reason: {c.status_reason}</div>}
+          </div>
+        ))}
+        {rows.map((r) => (
+          <div key={r.id} className="small spread">
+            <span>Surgery date <b>{fmtDate(r.surgery_date)}</b> · {r.procedure_done} <span className="muted">({r.urgency}{r.surgeon ? `, ${r.surgeon}` : ''})</span></span>
+            {r.verified_at ? <span className="badge ok">Verified</span>
+              : s.can('round.verify') ? <button className="ghost" style={{ padding: '4px 10px' }} onClick={async () => done((await supabase.from('surgeries').update({ verified_at: new Date().toISOString(), verified_by: s.session!.user.id }).eq('id', r.id)).error)}>Verify date</button>
+              : <span className="badge warn">Unverified</span>}
+          </div>
+        ))}
+        {admissionId && <p className="muted small" style={{ margin: 0 }}>Post-op day counts from the verified surgery date.</p>}
+        {admissionId && s.can('ipd.write') && mode === '' && <button className="ghost" onClick={() => setMode('record')}>Record an operation done outside an OT list</button>}
+        {mode === 'record' && admissionId && (
+          <form className="stack" onSubmit={async (e) => { e.preventDefault(); done((await supabase.from('surgeries').insert({ admission_id: admissionId, surgery_date: f.date, procedure_done: f.proc.trim(), urgency: f.urgency, surgeon: f.surgeon || null })).error); }}>
+            <div className="grid g2"><div className="field"><label className="req">Date</label><input type="date" required value={f.date} onChange={set('date')} /></div>
+              <div className="field"><label>Urgency</label><select value={f.urgency} onChange={set('urgency')}><option value="emergency">Emergency</option><option value="elective">Elective</option></select></div></div>
+            <div className="field"><label className="req">Procedure done</label><input required value={f.proc} onChange={set('proc')} /></div>
+            <div className="field"><label>Operating surgeon</label><input value={f.surgeon} onChange={set('surgeon')} /></div>
+            <div className="row"><button>Save</button><button type="button" className="ghost" onClick={() => setMode('')}>Cancel</button></div>
+          </form>
+        )}
+      </div>
       {err && <div className="msg err">{err}</div>}
     </div>
   );
@@ -431,28 +470,18 @@ function Surgeries({ admissionId, patientId }: { admissionId: string; patientId:
 
 function Investigations({ admissionId }: { admissionId: string }) {
   const s = useSession();
-  type Row = { id: string; name: string; status: string; result: string | null; ordered_at: string; resulted_at: string | null; abnormal: boolean | null };
-  const { rows, load } = usePanel<Row>('investigations', admissionId, '*', 'ordered_at');
-  const [name, setName] = useState(''); const [res, setRes] = useState<Record<string, string>>({}); const [err, setErr] = useState('');
-  const done = (error: any) => { if (error) setErr(friendlyError(error)); else { setErr(''); load(); } };
+  const people = usePersonnel(s.unit?.id);
+  const { rows, load } = usePanel<Inv>('investigations', admissionId, '*', 'ordered_at');
+  const [name, setName] = useState(''); const [err, setErr] = useState('');
   return (
-    <div className="card stack">
+    <div className="card stack" style={{ gap: 4 }}>
       <h3>Investigations</h3>
       {rows.length === 0 && <p className="muted small">None recorded.</p>}
-      {rows.map((r) => (
-        <div key={r.id} className="small" style={{ borderBottom: '1px solid #edf0f4', paddingBottom: 6 }}>
-          <div className="spread"><b>{r.name}</b>{r.status === 'pending' ? <span className="badge warn">Pending</span> : <span className={`badge ${r.abnormal ? 'bad' : 'ok'}`}>{r.abnormal ? 'Abnormal' : 'Resulted'}</span>}</div>
-          {r.result && <div>{r.result} <span className="muted">· {fmtDateTime(r.resulted_at)}</span></div>}
-          {r.status === 'pending' && s.can('ipd.write') && (
-            <form className="row" style={{ marginTop: 4, flexWrap: 'nowrap' }} onSubmit={async (e) => { e.preventDefault(); done((await supabase.from('investigations').update({ status: 'resulted', result: res[r.id], resulted_at: new Date().toISOString() }).eq('id', r.id)).error); }}>
-              <input required placeholder="Result" value={res[r.id] ?? ''} onChange={(e) => setRes({ ...res, [r.id]: e.target.value })} style={{ padding: '6px 8px' }} />
-              <button className="ghost" style={{ padding: '6px 10px' }}>Save</button>
-            </form>
-          )}
-        </div>
-      ))}
+      {rows.map((r) => <InvestigationRow key={r.id} r={r} people={people} onChange={load} />)}
       {s.can('ipd.write') && (
-        <form className="row" style={{ flexWrap: 'nowrap' }} onSubmit={async (e) => { e.preventDefault(); done((await supabase.from('investigations').insert({ admission_id: admissionId, name: name.trim() })).error); setName(''); }}>
+        <form className="row" style={{ flexWrap: 'nowrap', marginTop: 8 }} onSubmit={async (e) => { e.preventDefault();
+          const { error } = await supabase.from('investigations').insert({ admission_id: admissionId, name: name.trim() });
+          if (error) setErr(friendlyError(error)); else { setErr(''); setName(''); load(); } }}>
           <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Order investigation, e.g. CECT abdomen" />
           <button className="ghost">Add</button>
         </form>
@@ -507,6 +536,48 @@ function Rounds({ admissionId }: { admissionId: string }) {
           {r.plan && <div><span className="muted">Plan:</span> {r.plan}</div>}
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Assistant professor and intern for this admission; consultant and PG can be changed here too. */
+function Team({ a, onChange }: { a: Admission; onChange: () => void }) {
+  const s = useSession();
+  const people = usePersonnel(s.unit?.id);
+  const [edit, setEdit] = useState(false);
+  const [f, setF] = useState({ consultant_person_id: a.consultant_person_id ?? '', asst_prof_person_id: a.asst_prof_person_id ?? '',
+    pg_person_id: a.pg_person_id ?? '', intern_person_id: a.intern_person_id ?? '' });
+  const [err, setErr] = useState('');
+  const name = (id: string | null) => people.find((p) => p.id === id)?.full_name ?? '—';
+  const pick = (cats: string[], k: keyof typeof f, label: string) => (
+    <div className="field"><label>{label}</label><select value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })}><option value="">—</option>
+      {people.filter((p) => cats.includes(p.category)).map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select></div>);
+  if (!edit) return (
+    <>
+      <div><label>Asst. Professor</label>{name(a.asst_prof_person_id)}</div>
+      <div><label>Intern</label>{name(a.intern_person_id)}
+        {s.can('ipd.write') && <div><button className="ghost" style={{ padding: '3px 8px', marginTop: 4 }} onClick={() => setEdit(true)}>Change team</button></div>}</div>
+    </>
+  );
+  const save = async () => {
+    const pg = people.find((p) => p.id === f.pg_person_id);
+    const { error } = await supabase.from('admissions').update({
+      consultant_person_id: f.consultant_person_id || null, asst_prof_person_id: f.asst_prof_person_id || null,
+      pg_person_id: f.pg_person_id || null, intern_person_id: f.intern_person_id || null,
+      assigned_pg_id: pg?.user_id ?? null,
+    }).eq('id', a.id);
+    if (error) setErr(friendlyError(error)); else { setEdit(false); onChange(); }
+  };
+  return (
+    <div className="stack" style={{ gridColumn: '1 / -1' }}>
+      <div className="grid g2">
+        {pick(['unit_chief', 'consultant'], 'consultant_person_id', 'Consultant')}
+        {pick(['assistant_professor', 'consultant'], 'asst_prof_person_id', 'Asst. Professor')}
+        {pick(['pg', 'senior_resident'], 'pg_person_id', 'Assigned PG')}
+        {pick(['intern'], 'intern_person_id', 'Intern')}
+      </div>
+      {err && <div className="msg err">{err}</div>}
+      <div className="row"><button onClick={save}>Save team</button><button className="ghost" onClick={() => setEdit(false)}>Cancel</button></div>
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useSession } from '@/lib/session';
 import { supabase, friendlyError } from '@/lib/supabase';
 import type { Ward } from '@/lib/data';
-import { REPORTS, buildReport, downloadXlsx, type Report, type ReportKind } from '@/lib/reports';
+import { REPORTS, WORKFLOW_REPORTS, buildReport, buildWorkflowReport, isWorkflowKind, downloadXlsx, type Report, type ReportKind, type WorkflowKind } from '@/lib/reports';
 import { ReportView } from '@/components/ReportView';
 import Link from 'next/link';
 
@@ -11,7 +11,7 @@ export default function ReportsPage() {
   const s = useSession();
   const unitId = s.unit?.id;
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-  const [kind, setKind] = useState<ReportKind>('unit');
+  const [kind, setKind] = useState<ReportKind | WorkflowKind>('daily');
   const [date, setDate] = useState(today);
   const [wards, setWards] = useState<Ward[]>([]);
   const [ward, setWard] = useState('');
@@ -20,7 +20,7 @@ export default function ReportsPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [made, setMade] = useState('');
-  const meta = REPORTS.find((r) => r.k === kind)!;
+  const meta = [...REPORTS, ...WORKFLOW_REPORTS].find((r) => r.k === kind)!;
 
   useEffect(() => {
     if (!unitId) return;
@@ -37,7 +37,7 @@ export default function ReportsPage() {
   const generate = async () => {
     setBusy(true); setErr('');
     try {
-      setReport(await buildReport(kind, unitId!, s.unit!.name, date, ward));
+      setReport(isWorkflowKind(kind) ? await buildWorkflowReport(kind, unitId!, s.unit!.name, date) : await buildReport(kind, unitId!, s.unit!.name, date, ward));
       setMade(new Date().toISOString());
     } catch (e) { setErr(friendlyError(e)); }
     setBusy(false);
@@ -48,9 +48,11 @@ export default function ReportsPage() {
       <style>{`@media print { @page { size: A4 ${orient}; margin: 10mm; } }`}</style>
       <div className="card stack no-print">
         <div className="field"><label>Report</label>
-          <select value={kind} onChange={(e) => setKind(e.target.value as ReportKind)}>{REPORTS.map((r) => <option key={r.k} value={r.k}>{r.label}</option>)}</select></div>
+          <select value={kind} onChange={(e) => setKind(e.target.value as ReportKind)}>
+            <optgroup label="Unit and OT">{WORKFLOW_REPORTS.map((r) => <option key={r.k} value={r.k}>{r.label}</option>)}</optgroup>
+            <optgroup label="Ward rounds">{REPORTS.map((r) => <option key={r.k} value={r.k}>{r.label}</option>)}</optgroup></select></div>
         <div className="grid g2">
-          <div className="field"><label>Date</label><input type="date" value={date} max={today} onChange={(e) => { setDate(e.target.value); setReport(null); }} /></div>
+          <div className="field"><label>Date</label><input type="date" value={date} max={kind === 'otday' ? undefined : today} onChange={(e) => { setDate(e.target.value); setReport(null); }} /></div>
           {meta.k === 'ward' ? (
             <div className="field"><label>Ward</label>
               <select value={ward} onChange={(e) => { setWard(e.target.value); setReport(null); }}>

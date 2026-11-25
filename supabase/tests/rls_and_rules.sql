@@ -248,7 +248,71 @@ select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
 select pg_temp.expect_error($q$insert into public.unit_personnel (unit_id, full_name, category) select unit6, 'X Y', 'pg' from ctx$q$, 'row-level security');
 reset role;
 
--- 12. audit trail was written
+-- 12. ward workflow: booking, call, pre-op, OT list, outcome, tasks, investigations
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b2');
+select pg_temp.expect_error($q$insert into public.surgery_waitlist (patient_id, unit_id, list_type, planned_procedure)
+  select (select id from public.patients where uhid = 'TEST-0004'), unit6, 'major', 'Hernioplasty' from ctx$q$, 'mobile number');
+update public.patients set phone = '9000000004' where uhid = 'TEST-0004';
+insert into public.surgery_waitlist (patient_id, unit_id, list_type, planned_procedure, diagnosis, priority)
+  select (select id from public.patients where uhid = 'TEST-0004'), unit6, 'major', 'Lap cholecystectomy', 'Gallstones', 'routine' from ctx;
+insert into public.unit_personnel (unit_id, full_name, category, user_id) select unit6, 'Intern One', 'intern', '00000000-0000-0000-0000-0000000000f6' from ctx;
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+insert into public.booking_calls (booking_id, outcome) select id, 'willing' from public.surgery_waitlist where planned_procedure = 'Lap cholecystectomy';
+do $$ begin
+  if (select contact_status || contact_attempts from public.surgery_waitlist where planned_procedure = 'Lap cholecystectomy') <> 'willing1' then raise exception 'call not tracked'; end if;
+  if (select preop_ready from public.surgery_waitlist where planned_procedure = 'Lap cholecystectomy') then raise exception 'preop should be incomplete'; end if;
+end $$;
+update public.surgery_waitlist set pac_status = 'fit', consent_status = 'taken', investigations_ok = true where planned_procedure = 'Lap cholecystectomy';
+do $$ begin if not (select preop_ready from public.surgery_waitlist where planned_procedure = 'Lap cholecystectomy') then raise exception 'preop should be ready'; end if; end $$;
+insert into public.ot_lists (unit_id, service, list_date, ot_room) select unit6, 'major', current_date, 'OT 3' from ctx;
+select public.add_booking_to_list((select id from public.ot_lists where ot_room = 'OT 3'), (select id from public.surgery_waitlist where planned_procedure = 'Lap cholecystectomy'));
+select pg_temp.expect_error($q$select public.add_booking_to_list((select id from public.ot_lists where ot_room = 'OT 3'), (select id from public.surgery_waitlist where planned_procedure = 'Lap cholecystectomy'))$q$, 'already on an OT list');
+insert into public.ot_cases (list_id, manual_name, manual_age_sex, procedure) select id, 'Walk-in Case', '30/M', 'Excision of lipoma' from public.ot_lists where ot_room = 'OT 3';
+do $$ begin if (select status from public.surgery_waitlist where planned_procedure = 'Lap cholecystectomy') <> 'scheduled' then raise exception 'booking not scheduled'; end if; end $$;
+select pg_temp.expect_error($q$update public.ot_lists set status = 'final' where ot_room = 'OT 3'$q$, 'ot.approve');
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b2');
+update public.ot_lists set status = 'final' where ot_room = 'OT 3';
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+select pg_temp.expect_error($q$update public.ot_cases set procedure = 'Open cholecystectomy' where procedure = 'Lap cholecystectomy'$q$, 'final');
+select public.set_ot_case_outcome((select id from public.ot_cases where procedure = 'Lap cholecystectomy'), 'done', null,
+  '{"findings":"Thick-walled gallbladder","postop_diagnosis":"Chronic cholecystitis"}');
+select pg_temp.expect_error($q$select public.set_ot_case_outcome((select id from public.ot_cases where manual_name = 'Walk-in Case'), 'cancelled', '')$q$, 'reason');
+select public.set_ot_case_outcome((select id from public.ot_cases where manual_name = 'Walk-in Case'), 'postponed', 'OT time over');
+do $$ begin
+  if (select status from public.surgery_waitlist where planned_procedure = 'Lap cholecystectomy') <> 'completed' then raise exception 'booking not completed'; end if;
+  if not exists (select 1 from public.surgeries s join public.admissions a on a.id = s.admission_id where a.ip_number = 'IP-200' and s.procedure_done = 'Lap cholecystectomy') then raise exception 'surgery not recorded'; end if;
+end $$;
+insert into public.care_tasks (unit_id, kind, description, assigned_person_id) select unit6, 'records', 'Update OT register', (select id from public.unit_personnel where full_name = 'Intern One') from ctx;
+insert into public.investigations (admission_id, name) select id, 'USG abdomen' from public.admissions where ip_number = 'IP-200';
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000f6');
+select public.set_task_status((select id from public.care_tasks where description = 'Update OT register'), 'in_progress');
+select public.set_task_status((select id from public.care_tasks where description = 'Update OT register'), 'done');
+select pg_temp.expect_error($q$select public.set_task_status((select id from public.care_tasks where description = 'Update OT register'), 'verified')$q$, 'task.verify');
+select public.mark_investigation_collected((select id from public.investigations where name = 'USG abdomen'));
+select pg_temp.expect_error($q$insert into public.surgery_waitlist (patient_id, unit_id, list_type, planned_procedure)
+  select (select id from public.patients where uhid = 'TEST-0001'), unit6, 'minor', 'X' from ctx$q$, 'row-level security');
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b2');
+select public.set_task_status((select id from public.care_tasks where description = 'Update OT register'), 'verified');
+do $$ begin
+  if (select status from public.care_tasks where description = 'Update OT register') <> 'verified' then raise exception 'task not verified'; end if;
+  if (select collected_at from public.investigations where name = 'USG abdomen') is null then raise exception 'not collected'; end if;
+  if (select count(*) from public.v_waiting_list) < 1 then raise exception 'waiting list view empty'; end if;
+end $$;
+reset role;
+-- a task not assigned to the intern cannot be moved by them
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+insert into public.care_tasks (unit_id, kind, description) select unit6, 'admin', 'Unassigned task' from ctx;
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000f6');
+select pg_temp.expect_error($q$select public.set_task_status((select id from public.care_tasks where description = 'Unassigned task'), 'done')$q$, 'not assigned to you');
+reset role;
+
+-- 13. audit trail was written
 do $$ begin
   if (select count(*) from public.audit_logs where table_name = 'ward_round_entries') < 3 then raise exception 'audit missing'; end if;
 end $$;
