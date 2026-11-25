@@ -5,17 +5,18 @@ import { useSearchParams } from 'next/navigation';
 import { useSession } from '@/lib/session';
 import { supabase, friendlyError } from '@/lib/supabase';
 import { fmtDate, fmtDateTime, ageSex, nowLocalInput, istInputToIso, STATUS_LABEL } from '@/lib/format';
-import { useColleagues, isFaculty, isPG } from '@/lib/staff';
 import { BedPicker } from '@/components/BedPicker';
-import { StatusBadge } from '@/components/ui';
+import { StatusBadge, AllergyField } from '@/components/ui';
+import { usePersonnel, lastPick, savePick } from '@/lib/personnel';
 import { Photos } from '@/components/Photos';
 
-type Patient = { id: string; uhid: string; full_name: string; age_years: number | null; date_of_birth: string | null; sex: string;
-  phone: string | null; address: string | null; emergency_contact_name: string | null; emergency_contact_phone: string | null;
-  allergies: string | null; comorbidities: string[]; blood_group: string | null; created_at: string };
+type Patient = { id: string; uhid: string; full_name: string; age_years: number | null; sex: string;
+  phone: string | null; emergency_contact_name: string | null; emergency_contact_phone: string | null;
+  allergy_status: 'yes' | 'no' | null; allergies: string | null; comorbidities: string[]; created_at: string };
 type Admission = { id: string; ip_number: string; admitted_at: string; admission_type: string; status: string; discharged_at: string | null;
   planned_discharge_on: string | null; discharge_note: string | null; consultant_id: string | null; assigned_pg_id: string | null;
-  consultant: { full_name: string } | null; pg: { full_name: string } | null };
+  consultant: { full_name: string } | null; pg: { full_name: string } | null;
+  cp: { full_name: string } | null; pgp: { full_name: string } | null };
 
 export default function PatientPage() { return <Suspense><PatientView /></Suspense>; }
 
@@ -31,7 +32,7 @@ function PatientView() {
   const load = useCallback(async () => {
     const [pp, aa] = await Promise.all([
       supabase.from('patients').select('*').eq('id', id).maybeSingle(),
-      supabase.from('admissions').select('*, consultant:staff!admissions_consultant_id_fkey(full_name), pg:staff!admissions_assigned_pg_id_fkey(full_name)')
+      supabase.from('admissions').select('*, consultant:staff!admissions_consultant_id_fkey(full_name), pg:staff!admissions_assigned_pg_id_fkey(full_name), cp:unit_personnel!admissions_consultant_person_id_fkey(full_name), pgp:unit_personnel!admissions_pg_person_id_fkey(full_name)')
         .eq('patient_id', id).order('admitted_at', { ascending: false }),
     ]);
     if (pp.error) setErr(friendlyError(pp.error));
@@ -51,7 +52,8 @@ function PatientView() {
             <h2 style={{ fontSize: 20, margin: 0 }}>{p.full_name}</h2>
             <div className="row small" style={{ gap: 14 }}>
               <span>UHID <b>{p.uhid}</b></span><span>{ageSex(p.age_years, p.sex)}</span>
-              {p.blood_group && <span>Blood group {p.blood_group}</span>}{p.phone && <span>{p.phone}</span>}
+              {p.phone && <span>{p.phone}</span>}
+              <span>Allergies: {p.allergy_status === 'yes' ? 'Yes' : p.allergy_status === 'no' ? 'No' : 'not recorded'}</span>
             </div>
           </div>
           <div className="row" style={{ gap: 6 }}>
@@ -64,11 +66,10 @@ function PatientView() {
             }}>Remove record</button>}
           </div>
         </div>
-        {p.allergies && <div className="msg err" style={{ marginTop: 10 }}><b>Allergies:</b> {p.allergies}</div>}
+        {p.allergy_status !== 'no' && p.allergies && <div className="msg err" style={{ marginTop: 10 }}><b>Allergies:</b> {p.allergies}</div>}
         {editing ? <EditPatient p={p} onDone={() => { setEditing(false); load(); }} /> : (
           <div className="grid g3 small" style={{ marginTop: 10 }}>
             <div><label>Comorbidities</label>{p.comorbidities.length ? p.comorbidities.join(', ') : 'None recorded'}</div>
-            <div><label>Address</label>{p.address ?? '—'}</div>
             <div><label>Emergency contact</label>{p.emergency_contact_name ?? '—'} {p.emergency_contact_phone ?? ''}</div>
           </div>
         )}
@@ -81,7 +82,7 @@ function PatientView() {
       </div>
 
       {tab === 'admission' && (active ? <ActiveAdmission a={active} onChange={load} />
-        : s.can('ipd.write') ? <AdmitForm patientId={p.id} onDone={load} />
+        : s.can('ipd.write') ? <AdmitForm patient={p} onDone={load} />
         : <div className="card muted">Not currently admitted.</div>)}
       {active && tab === 'diagnosis' && <Diagnoses admissionId={active.id} />}
       {active && tab === 'surgery' && <Surgeries admissionId={active.id} patientId={p.id} />}
@@ -95,7 +96,7 @@ function PatientView() {
           {adms.length === 0 ? <p className="muted small">No admissions yet.</p> : adms.map((a) => (
             <div key={a.id} className="spread small" style={{ borderBottom: '1px solid #edf0f4', padding: '8px 0' }}>
               <span><b>IP {a.ip_number}</b> · {fmtDate(a.admitted_at)} → {a.discharged_at ? fmtDate(a.discharged_at) : 'now'}
-                <span className="muted"> · {a.admission_type}{a.consultant ? ` · ${a.consultant.full_name}` : ''}</span></span>
+                <span className="muted"> · {a.admission_type}{(a.cp ?? a.consultant) ? ` · ${(a.cp ?? a.consultant)!.full_name}` : ''}</span></span>
               <span className="row" style={{ gap: 6 }}><Link href={`/discharge/?a=${a.id}`}>Summary</Link><span className={`badge ${a.status === 'admitted' ? 'teal' : ''}`}>{a.status}</span></span>
             </div>
           ))}
@@ -115,16 +116,17 @@ const TABS = [
 // ---------------------------------------------------------------- edit patient
 function EditPatient({ p, onDone }: { p: Patient; onDone: () => void }) {
   const [f, setF] = useState({ full_name: p.full_name, age_years: p.age_years?.toString() ?? '', sex: p.sex, phone: p.phone ?? '',
-    address: p.address ?? '', allergies: p.allergies ?? '', emergency_contact_name: p.emergency_contact_name ?? '',
-    emergency_contact_phone: p.emergency_contact_phone ?? '', comorbidities: p.comorbidities.join(', '), blood_group: p.blood_group ?? '' });
+    allergy_status: p.allergy_status ?? (p.allergies ? 'yes' : ''), allergies: p.allergies ?? '', emergency_contact_name: p.emergency_contact_name ?? '',
+    emergency_contact_phone: p.emergency_contact_phone ?? '', comorbidities: p.comorbidities.join(', ') });
   const [err, setErr] = useState('');
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   const save = async (e: FormEvent) => {
-    e.preventDefault();
+    e.preventDefault(); setErr('');
+    if (!f.allergy_status) { setErr('Choose Yes or No for allergies.'); return; }
     const { error } = await supabase.from('patients').update({
       full_name: f.full_name.trim(), age_years: f.age_years ? Number(f.age_years) : null, sex: f.sex, phone: f.phone || null,
-      address: f.address || null, allergies: f.allergies || null, emergency_contact_name: f.emergency_contact_name || null,
-      emergency_contact_phone: f.emergency_contact_phone || null, blood_group: f.blood_group || null,
+      allergy_status: f.allergy_status, allergies: f.allergy_status === 'yes' ? f.allergies.trim() || null : null,
+      emergency_contact_name: f.emergency_contact_name || null, emergency_contact_phone: f.emergency_contact_phone || null,
       comorbidities: f.comorbidities.split(',').map((x) => x.trim()).filter(Boolean),
     }).eq('id', p.id);
     if (error) setErr(friendlyError(error)); else onDone();
@@ -142,8 +144,7 @@ function EditPatient({ p, onDone }: { p: Patient; onDone: () => void }) {
         <div className="field"><label>Emergency contact</label><input value={f.emergency_contact_name} onChange={set('emergency_contact_name')} /></div>
         <div className="field"><label>Emergency phone</label><input value={f.emergency_contact_phone} onChange={set('emergency_contact_phone')} /></div>
       </div>
-      <div className="field"><label>Address</label><input value={f.address} onChange={set('address')} /></div>
-      <div className="field"><label>Allergies</label><input value={f.allergies} onChange={set('allergies')} /></div>
+      <AllergyField status={f.allergy_status} text={f.allergies} onStatus={(v) => setF({ ...f, allergy_status: v })} onText={(v) => setF({ ...f, allergies: v })} />
       <div className="field"><label>Comorbidities (comma separated)</label><input value={f.comorbidities} onChange={set('comorbidities')} /></div>
       {err && <div className="msg err">{err}</div>}
       <div className="row"><button>Save</button><button type="button" className="ghost" onClick={onDone}>Cancel</button></div>
@@ -152,44 +153,93 @@ function EditPatient({ p, onDone }: { p: Patient; onDone: () => void }) {
 }
 
 // ---------------------------------------------------------------- admit
-function AdmitForm({ patientId, onDone }: { patientId: string; onDone: () => void }) {
+function AdmitForm({ patient, onDone }: { patient: Patient; onDone: () => void }) {
   const s = useSession();
-  const staff = useColleagues(s.unit?.id);
+  const people = usePersonnel(s.unit?.id);
+  const consultants = people.filter((x) => ['unit_chief', 'consultant', 'assistant_professor'].includes(x.category));
+  const pgs = people.filter((x) => ['pg', 'senior_resident'].includes(x.category));
   const [open, setOpen] = useState(false);
-  const [f, setF] = useState({ ip: '', at: nowLocalInput(), type: 'elective', diagnosis: '', consultant: '', pg: '' });
-  const [bed, setBed] = useState('');
+  const [wards, setWards] = useState<{ id: string; code: string; name: string; free: number }[]>([]);
+  const [f, setF] = useState({ ip: '', at: nowLocalInput(), type: 'elective', ward: '', diagnosis: '', consultant: '', pg: '' });
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
 
+  useEffect(() => {
+    if (!open || !s.unit) return;
+    (async () => {
+      const [w, b, occ, last] = await Promise.all([
+        supabase.from('wards').select('id, code, name, sort_order').eq('unit_id', s.unit!.id).eq('active', true).order('sort_order'),
+        supabase.from('ward_beds').select('id, ward_id').eq('unit_id', s.unit!.id).eq('active', true),
+        supabase.from('bed_assignments').select('bed_id').eq('unit_id', s.unit!.id).is('to_at', null),
+        supabase.from('admissions').select('id, diagnoses(description, created_at)').eq('patient_id', patient.id)
+          .order('admitted_at', { ascending: false }).limit(1).maybeSingle(),
+      ]);
+      const busyBeds = new Set((occ.data ?? []).map((x: { bed_id: string }) => x.bed_id));
+      const list = ((w.data as { id: string; code: string; name: string }[]) ?? []).map((x) => ({
+        ...x, free: ((b.data as { id: string; ward_id: string }[]) ?? []).filter((y) => y.ward_id === x.id && !busyBeds.has(y.id)).length }));
+      setWards(list);
+      const want = patient.sex === 'F' ? 'FSW' : 'MSW';
+      const def = list.find((x) => x.code === want && x.free > 0) ?? list.find((x) => x.free > 0);
+      const dx = ((last.data as any)?.diagnoses ?? []).sort((a: any, z: any) => z.created_at.localeCompare(a.created_at))[0]?.description ?? '';
+      setF((cur) => ({ ...cur, ward: def?.id ?? '', diagnosis: cur.diagnosis || dx || lastPick('diagnosis') }));
+    })();
+  }, [open, s.unit, patient.id, patient.sex]);
+
+  useEffect(() => {
+    if (!open || !people.length) return;
+    setF((cur) => ({
+      ...cur,
+      consultant: cur.consultant || (consultants.some((c) => c.id === lastPick('consultant')) ? lastPick('consultant') : ''),
+      pg: cur.pg || (pgs.some((c) => c.id === lastPick('pg')) ? lastPick('pg') : ''),
+    }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, people.length]);
+
   if (!open) return <div className="card spread"><span className="muted">Not currently admitted.</span><button className="teal" onClick={() => setOpen(true)}>Admit to {s.unit?.name}</button></div>;
 
+  const ward = wards.find((w) => w.id === f.ward);
   const save = async (e: FormEvent) => {
     e.preventDefault(); setBusy(true); setErr('');
-    const chief = staff.find((c) => c.roles.includes('unit_chief'));
-    const { error } = await supabase.rpc('admit_patient', {
-      p_patient_id: patientId, p_unit_id: s.unit!.id, p_ip_number: f.ip.trim(), p_bed_id: bed || null,
-      p_admitted_at: istInputToIso(f.at), p_admission_type: f.type, p_diagnosis: f.diagnosis || null,
-      p_consultant_id: f.consultant || null, p_unit_chief_id: chief?.user_id ?? null, p_assigned_pg_id: f.pg || null,
+    const { data, error } = await supabase.rpc('admit_patient_auto', {
+      p_patient_id: patient.id, p_unit_id: s.unit!.id, p_ip_number: f.ip.trim(), p_ward_id: f.ward || null,
+      p_admitted_at: istInputToIso(f.at), p_admission_type: f.type, p_diagnosis: f.diagnosis.trim() || null,
+      p_consultant_person: f.consultant || null, p_pg_person: f.pg || null,
     });
     setBusy(false);
-    if (error) setErr(friendlyError(error)); else onDone();
+    if (error) { setErr(friendlyError(error)); return; }
+    savePick('diagnosis', f.diagnosis.trim()); savePick('consultant', f.consultant); savePick('pg', f.pg);
+    const bed = (data as { bed_label: string | null }[])?.[0]?.bed_label;
+    if (bed) alert(`Admitted. Bed ${bed} in ${ward?.name ?? 'the ward'}.`);
+    onDone();
   };
   return (
     <form className="card stack" onSubmit={save}>
       <h2>New admission · {s.unit?.name}</h2>
+      <div className="grid g2">
+        <div className="field"><label>UHID</label><input value={patient.uhid} readOnly style={{ background: '#f3f5f8' }} /></div>
+        <div className="field"><label>Patient</label><input value={`${patient.full_name} · ${ageSex(patient.age_years, patient.sex)}`} readOnly style={{ background: '#f3f5f8' }} /></div>
+      </div>
       <div className="grid g3">
         <div className="field"><label className="req">IP number</label><input required value={f.ip} onChange={set('ip')} autoFocus /></div>
         <div className="field"><label className="req">Admitted at</label><input type="datetime-local" required value={f.at} onChange={set('at')} /></div>
         <div className="field"><label>Type</label><select value={f.type} onChange={set('type')}><option value="elective">Elective</option><option value="emergency">Emergency</option></select></div>
       </div>
-      <BedPicker unitId={s.unit!.id} value={bed} onChange={setBed} />
+      <div className="field"><label className="req">Ward</label>
+        <select required value={f.ward} onChange={set('ward')}>
+          <option value="">Select ward</option>
+          {wards.map((w) => <option key={w.id} value={w.id} disabled={w.free === 0}>{w.name} · {w.free ? `${w.free} free` : 'full'}</option>)}
+        </select>
+        <div className="small muted" style={{ marginTop: 4 }}>The next free bed is given automatically.</div>
+      </div>
       <div className="field"><label>Provisional diagnosis</label><input value={f.diagnosis} onChange={set('diagnosis')} /></div>
       <div className="grid g2">
         <div className="field"><label>Consultant</label><select value={f.consultant} onChange={set('consultant')}><option value="">—</option>
-          {staff.filter(isFaculty).map((c) => <option key={c.user_id} value={c.user_id}>{c.full_name}</option>)}</select></div>
+          {consultants.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}</select></div>
         <div className="field"><label>Assigned PG</label><select value={f.pg} onChange={set('pg')}><option value="">—</option>
-          {staff.filter(isPG).map((c) => <option key={c.user_id} value={c.user_id}>{c.full_name}</option>)}</select></div>
+          {pgs.map((c) => <option key={c.id} value={c.id}>{c.full_name}{c.pg_year ? ` · PG${c.pg_year}` : ''}</option>)}</select>
+          {pgs.length === 0 && <div className="small muted" style={{ marginTop: 4 }}>No PGs yet. Add them under More → Unit personnel.</div>}
+        </div>
       </div>
       {err && <div className="msg err">{err}</div>}
       <div className="row"><button disabled={busy}>{busy ? 'Admitting…' : 'Admit patient'}</button><button type="button" className="ghost" onClick={() => setOpen(false)}>Cancel</button></div>
@@ -236,8 +286,8 @@ function ActiveAdmission({ a, onChange }: { a: Admission; onChange: () => void }
           <span className="badge navy" style={{ fontSize: 14 }}>{bed ? `${bed.ward} · ${bed.label}` : 'No bed allocated'}</span>
         </div>
         <div className="grid g3 small">
-          <div><label>Consultant</label>{a.consultant?.full_name ?? '—'}</div>
-          <div><label>Assigned PG</label>{a.pg?.full_name ?? '—'}</div>
+          <div><label>Consultant</label>{(a.cp ?? a.consultant)?.full_name ?? '—'}</div>
+          <div><label>Assigned PG</label>{(a.pgp ?? a.pg)?.full_name ?? '—'}</div>
           <div><label>Planned discharge</label>
             {s.can('ipd.write') ? (
               <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>

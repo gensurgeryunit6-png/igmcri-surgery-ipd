@@ -10,7 +10,7 @@ import { Icon } from './Icon';
 const TITLES: [string, string][] = [
   ['/rounds', 'Ward rounds'], ['/round', 'Ward round'], ['/verify', 'Review rounds'], ['/reports', 'Downloads'],
   ['/census', 'Inpatients'], ['/wards', 'Ward board'], ['/patients', 'Patients'], ['/patient', 'Patient'],
-  ['/users', 'User management'], ['/more', 'More'], ['/notifications', 'Notifications'], ['/settings', 'Wards and beds'], ['/discharge', 'Discharge summary'], ['/saved-reports', 'Saved morning reports'], ['/account', 'My account'],
+  ['/users', 'User management'], ['/more', 'More'], ['/notifications', 'Notifications'], ['/settings', 'Wards and beds'], ['/discharge', 'Discharge summary'], ['/saved-reports', 'Saved morning reports'], ['/account', 'My account'], ['/personnel', 'Unit personnel'],
 ];
 const PUBLIC_PATHS = ['/login', '/reset'];
 

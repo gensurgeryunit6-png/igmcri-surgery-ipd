@@ -9,6 +9,7 @@ export default function MorePage() {
   const s = useSession();
   const items = [
     { href: '/notifications/', label: 'Notifications', icon: 'reports', note: 'Messages and alerts for you' },
+    { href: '/personnel/', label: 'Unit personnel', icon: 'team', note: 'Consultants, PGs and interns of the unit' },
     { href: '/users/', label: 'User management', icon: 'team', perm: 'users.manage', note: 'Give or remove access, set roles' },
     { href: '/settings/', label: 'Wards and beds', icon: 'bed', perm: 'settings.manage', note: 'Ward names, beds, morning report time' },
     { href: '/saved-reports/', label: 'Saved morning reports', icon: 'reports', perm: 'report.generate', note: 'Ward reports saved each morning' },
