@@ -8,6 +8,7 @@ import { usePersonnel } from '@/lib/personnel';
 import { fmtDate, fmtDateTime } from '@/lib/format';
 import { downloadXlsx, type Report } from '@/lib/reports';
 import { ReportView } from '@/components/ReportView';
+import { IntraOpForm, blankIntraOp, type IntraOp } from '@/components/IntraOpNote';
 import { CASE_STATUS, LATERALITY, SESSIONS, serviceLabel, loadOtList, caseWho, type OtCase, type OtList, type WaitRow } from '@/lib/workflow';
 
 export default function OtListPage() { return <Suspense><OtListView /></Suspense>; }
@@ -148,6 +149,7 @@ function CaseCard({ c, n, ready, editable, canOutcome, service, onUp, onDown, on
   const [f, setF] = useState(c);
   const [reason, setReason] = useState('');
   const [note, setNote] = useState({ procedure_done: c.procedure, findings: '', postop_diagnosis: '', complications: '' });
+  const [op, setOp] = useState<IntraOp>(blankIntraOp({ procedure_done: c.procedure, surgeon: c.surgeon ?? '', assistants: c.assistants ?? '', anaesthesia: c.anaesthesia ?? '', position: c.position ?? '' }));
   useEffect(() => setF(c), [c]);
   const endo = service === 'endoscopy';
   const set = (k: keyof OtCase) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value || null });
@@ -212,7 +214,15 @@ function CaseCard({ c, n, ready, editable, canOutcome, service, onUp, onDown, on
             <button className="ghost" onClick={() => setMode('')}>Cancel</button></div>
         </div>
       )}
-      {mode === 'done' && (
+      {mode === 'done' && !endo && (
+        <div className="stack" style={{ gap: 8 }}>
+          <b className="small">Intra-operative note</b>
+          <IntraOpForm value={op} onChange={setOp} />
+          <div className="row"><button className="teal" disabled={!op.procedure_done.trim()} onClick={() => { onOutcome('done', undefined, op as unknown as Record<string, string>); setMode(''); }}>Save intra-operative note</button>
+            <button className="ghost" onClick={() => setMode('')}>Back</button></div>
+        </div>
+      )}
+      {mode === 'done' && endo && (
         <div className="stack" style={{ gap: 8 }}>
           <div className="field"><label className="req">{endo ? 'Procedure done' : 'Procedure done'}</label><input value={note.procedure_done} onChange={(e) => setNote({ ...note, procedure_done: e.target.value })} /></div>
           <div className="field"><label>Findings</label><textarea value={note.findings} onChange={(e) => setNote({ ...note, findings: e.target.value })} style={{ minHeight: 60 }} /></div>

@@ -7,6 +7,7 @@ import { supabase, friendlyError } from '@/lib/supabase';
 import { useLive, must } from '@/lib/data';
 import { fmtDate } from '@/lib/format';
 import { SERVICES, SESSIONS, todayIst, type OtList } from '@/lib/workflow';
+import { OtGenerator } from '@/components/OtGenerator';
 
 type Row = OtList & { ot_cases: { status: string }[] };
 
@@ -21,6 +22,7 @@ function OtLists() {
   const [service, setService] = useState(useSearchParams().get('s') ?? 'major');
   const [past, setPast] = useState(false);
   const [nl, setNl] = useState<{ date: string; room: string; session: string } | null>(null);
+  const [gen, setGen] = useState(false);
   const [err, setErr] = useState('');
 
   const live = useLive(async () => {
@@ -44,7 +46,13 @@ function OtLists() {
         <button className={past ? 'ghost' : 'teal'} onClick={() => setPast(false)}>Today and coming</button>
         <button className={past ? 'teal' : 'ghost'} onClick={() => setPast(true)}>Previous lists</button>
       </div>
-      {s.can('ot.prepare') && !nl && <button onClick={() => setNl({ date: today, room: '', session: 'morning' })}>+ New {SERVICES.find((x) => x.v === service)?.label} list</button>}
+      {s.can('ot.prepare') && !nl && !gen && (
+        <div className="row">
+          <button className="teal" onClick={() => setGen(true)}>Generate OT list</button>
+          <button className="ghost" onClick={() => setNl({ date: today, room: '', session: 'morning' })}>+ Empty list</button>
+        </div>
+      )}
+      {gen && <OtGenerator initialService={service} onDone={(id) => router.push(`/ot-list/?id=${id}`)} onCancel={() => setGen(false)} />}
       {nl && (
         <div className="card stack">
           <div className="grid g3">

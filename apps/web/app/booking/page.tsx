@@ -85,7 +85,7 @@ function BookingView() {
           <h3 style={{ margin: 0 }}>Next step</h3>
           {listId ? <Link className="btn teal" href={`/ot-list/?id=${listId}`}>Open the OT list this case is on →</Link>
             : can && <AddToList b={b} onAdded={(lid) => router.push(`/ot-list/?id=${lid}`)} />}
-          {!adm && b.list_type === 'major' && s.can('ipd.write') && <Link className="btn ghost" href={`/patient/?id=${p.id}`}>Admit this patient →</Link>}
+          {!adm && s.can('ipd.write') && <Link className="btn ghost" href={`/patient/?id=${p.id}&tab=registration`}>Admit this patient (any date) →</Link>}
           {can && !listId && <CancelBooking onCancel={(reason) => update({ status: 'cancelled', status_reason: reason })} />}
         </div>
       )}
@@ -232,7 +232,7 @@ function AddToList({ b, onAdded }: { b: Booking; onAdded: (listId: string) => vo
           <div className="field"><label>Session</label><select value={nl.session} onChange={(e) => setNl({ ...nl, session: e.target.value })}>{Object.entries(SESSIONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
         </div>
       )}
-      {!b.preop_ready && b.list_type === 'major' && <div className="msg info small">Pre-op checklist is not complete. You can still add the case; it shows as not ready on the list.</div>}
+      {!b.preop_ready && <div className="msg info small">Pre-op checklist is not complete. You can still add the case; it shows as not ready on the list.</div>}
       {err && <div className="msg err">{err}</div>}
       <button className="teal" onClick={add}>Add to OT list</button>
     </div>

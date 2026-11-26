@@ -171,7 +171,7 @@ export async function downloadXlsx(r: Report, fileName: string) {
 export const WORKFLOW_REPORTS = [
   { k: 'daily', label: 'Daily unit report', landscape: true },
   { k: 'otday', label: 'OT lists for the day', landscape: true },
-  { k: 'preop', label: 'Pre-op checklist (inpatients awaiting surgery)', landscape: true },
+  { k: 'preop', label: 'Pre-op work-up (all booked patients)', landscape: true },
   { k: 'waitlist', label: 'Waiting list (Major, Minor, Endoscopy)', landscape: true },
 ] as const;
 export type WorkflowKind = (typeof WORKFLOW_REPORTS)[number]['k'];
@@ -215,12 +215,11 @@ export async function buildWorkflowReport(kind: WorkflowKind, unitId: string, un
     if (r.error) throw new Error(r.error.message);
     const all = (r.data ?? []) as WRow[];
     if (kind === 'preop') {
-      const list = all.filter((w) => w.is_admitted);
-      return { title: label, subtitle: `${unitName} · as of now`, sections: [{ heading: `${list.length} inpatients awaiting a procedure · ${list.filter((w) => !w.preop_ready).length} incomplete`,
-        columns: ['Bed', 'Patient', 'Procedure', 'Planned', 'Investigations', 'PAC', 'Physician', 'Consent', 'Blood', 'Responsible PG'],
-        rows: list.map((w) => [w.bed ?? '—', `${w.full_name} (${w.age_years ?? '?'}/${w.sex})\nIP ${w.ip_number ?? ''}`, `${SVC[w.list_type]}: ${w.planned_procedure}`,
+      return { title: label, subtitle: `${unitName} · as of now`, sections: ['major', 'minor', 'endoscopy'].map((sv) => { const list = all.filter((w) => w.list_type === sv); return { heading: `${SVC[sv]} · ${list.length} booked · ${list.filter((w) => !w.preop_ready).length} work-up pending`,
+        columns: ['Bed / OPD', 'Patient', 'Procedure', 'Planned', 'Investigations', 'PAC', 'Physician', 'Consent', 'Blood', 'Responsible PG'],
+        rows: list.map((w) => [w.is_admitted ? (w.bed ?? 'Admitted') : 'OPD', `${w.full_name} (${w.age_years ?? '?'}/${w.sex})\n${w.ip_number && w.is_admitted ? `IP ${w.ip_number}` : `UHID ${w.uhid}`}`, w.planned_procedure,
           w.planned_date ? fmtDate(w.planned_date) : '—', yes(w.investigations_ok, ''), w.pac_status.replace(/_/g, ' '), w.physician_status.replace(/_/g, ' '),
-          w.consent_status, w.blood_status.replace(/_/g, ' '), w.pg_name ?? '']) }] };
+          w.consent_status, w.blood_status.replace(/_/g, ' '), w.pg_name ?? '']) }; }) };
     }
     return { title: label, subtitle: `${unitName} · as of now`, sections: ['major', 'minor', 'endoscopy'].map((s) => {
       const list = all.filter((w) => w.list_type === s);

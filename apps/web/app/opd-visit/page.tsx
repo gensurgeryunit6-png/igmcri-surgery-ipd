@@ -18,7 +18,9 @@ type B = { id: string; list_type: string; planned_procedure: string; status: str
 export default function OpdVisitPage() { return <Suspense><OpdVisit /></Suspense>; }
 
 function OpdVisit() {
-  const id = useSearchParams().get('p') ?? '';
+  const sp = useSearchParams();
+  const id = sp.get('p') ?? '';
+  const presetType = sp.get('t');
   const s = useSession();
   const [p, setP] = useState<P | null>(null);
   const [visits, setVisits] = useState<V[]>([]);
@@ -67,7 +69,7 @@ function OpdVisit() {
         </div>
       )}
 
-      {s.can('patient.write') && !saved && <VisitForm patient={p} last={visits[0]} onSaved={(v) => { setSaved(v); load(); }} />}
+      {s.can('patient.write') && !saved && <VisitForm patient={p} last={visits[0]} presetType={presetType} onSaved={(v) => { setSaved(v); load(); }} />}
 
       {saved && (
         <div className="card stack">
@@ -102,13 +104,13 @@ function OpdVisit() {
   );
 }
 
-function VisitForm({ patient, last, onSaved }: { patient: P; last?: V; onSaved: (v: { id: string; decision: string; diagnosis: string; laterality: string }) => void }) {
+function VisitForm({ patient, last, presetType, onSaved }: { patient: P; last?: V; presetType?: string | null; onSaved: (v: { id: string; decision: string; diagnosis: string; laterality: string }) => void }) {
   const s = useSession();
   const people = usePersonnel(s.unit?.id);
   const consultants = people.filter((x) => ['unit_chief', 'consultant', 'assistant_professor'].includes(x.category));
   const lastC = lastPick('opd_consultant');
   const [f, setF] = useState({
-    visit_type: last ? 'follow_up' : 'new', consultant: '', diagnosis: last?.diagnosis ?? '', laterality: last?.laterality ?? '',
+    visit_type: presetType && ['new', 'follow_up', 'post_op', 'referral'].includes(presetType) ? presetType : last ? 'follow_up' : 'new', consultant: '', diagnosis: last?.diagnosis ?? '', laterality: last?.laterality ?? '',
     notes: '', investigations_advised: '', decision: 'follow_up', follow_up_on: '',
   });
   useEffect(() => { if (!f.consultant && consultants.some((c) => c.id === lastC)) setF((x) => ({ ...x, consultant: lastC })); }, [consultants.length]); // eslint-disable-line
