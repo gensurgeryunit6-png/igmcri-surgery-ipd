@@ -46,7 +46,7 @@ export function BookingForm({ patientId, phone, admissionId, opdVisitId, diagnos
           <button type="button" key={sv.v} className={f.list_type === sv.v ? 'teal' : 'ghost'} onClick={() => setF({ ...f, list_type: sv.v })}>{sv.label}</button>
         ))}
       </div>
-      <div className="field"><label className="req">Planned procedure</label><input required value={f.planned_procedure} onChange={set('planned_procedure')} placeholder={f.list_type === 'endoscopy' ? 'e.g. UGI endoscopy' : 'e.g. Lap cholecystectomy'} /></div>
+      <div className="field"><label className="req">Planned procedure</label><input required value={f.planned_procedure} onChange={set('planned_procedure')} placeholder={f.list_type === 'endoscopy' ? 'e.g. UGI endoscopy' : f.list_type === 'usg' ? 'e.g. USG-guided aspiration' : 'e.g. Lap cholecystectomy'} /></div>
       <div className="field"><label>Diagnosis</label><input value={f.diagnosis} onChange={set('diagnosis')} /></div>
       <div className="grid g2">
         <div className="field"><label>Side</label><select value={f.laterality} onChange={set('laterality')}><option value="">—</option>

@@ -13,6 +13,7 @@ import { BookingForm } from '@/components/BookingForm';
 import { InvestigationRow, type Inv } from '@/components/InvestigationRow';
 import { serviceLabel, BOOKING_STATUS, CASE_STATUS, DECISION, VISIT_TYPE } from '@/lib/workflow';
 import { Photos } from '@/components/Photos';
+import { Dressings } from '@/components/Dressings';
 
 type Patient = { id: string; uhid: string; full_name: string; age_years: number | null; sex: string;
   phone: string | null; phone_2: string | null; op_number: string | null; emergency_contact_name: string | null; emergency_contact_phone: string | null;
@@ -104,6 +105,7 @@ function PatientView() {
         <>
           <Rounds admissionId={current.id} active={!!active} />
           <Investigations admissionId={current.id} />
+          <Dressings admissionId={current.id} active={!!active} />
           <Medications admissionId={current.id} />
         </>
       )}
@@ -472,13 +474,13 @@ function Surgeries({ admissionId, patient }: { admissionId: string | null; patie
 
       {cases.length > 0 && (
         <div className="card stack" style={{ gap: 6 }}>
-          <h3 style={{ margin: 0 }}>OT, minor OT and endoscopy record</h3>
+          <h3 style={{ margin: 0 }}>OT, minor OT, endoscopy and USG record</h3>
           {cases.map((c) => (
             <div key={c.id} className="small" style={{ borderBottom: '1px solid #edf0f4', padding: '4px 0' }}>
               <div className="spread"><span><b>{c.ot_lists ? fmtDate(c.ot_lists.list_date) : ''}</b> · {serviceLabel(c.ot_lists?.service ?? '')} · {c.procedure_done ?? c.procedure}</span>
                 <span className={`badge ${c.status === 'done' ? 'ok' : c.status === 'planned' ? 'teal' : 'warn'}`}>{CASE_STATUS[c.status]}</span></div>
               {c.findings && <div className="muted">Findings: {c.findings}</div>}
-              {c.postop_diagnosis && <div className="muted">{c.ot_lists?.service === 'endoscopy' ? 'Impression' : 'Post-op diagnosis'}: {c.postop_diagnosis}</div>}
+              {c.postop_diagnosis && <div className="muted">{c.ot_lists?.service === 'endoscopy' || c.ot_lists?.service === 'usg' ? 'Impression' : 'Post-op diagnosis'}: {c.postop_diagnosis}</div>}
               {c.status_reason && <div className="muted">Reason: {c.status_reason}</div>}
             </div>
           ))}

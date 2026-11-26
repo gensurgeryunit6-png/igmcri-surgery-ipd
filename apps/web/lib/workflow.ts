@@ -2,7 +2,7 @@
 import { supabase } from './supabase';
 
 export const SERVICES = [
-  { v: 'major', label: 'Major OT' }, { v: 'minor', label: 'Minor OT' }, { v: 'endoscopy', label: 'Endoscopy' },
+  { v: 'major', label: 'Major OT' }, { v: 'minor', label: 'Minor OT' }, { v: 'endoscopy', label: 'Endoscopy' }, { v: 'usg', label: 'USG' },
 ] as const;
 export const serviceLabel = (v: string) => SERVICES.find((s) => s.v === v)?.label ?? v;
 
@@ -78,6 +78,9 @@ export const todayIst = () => new Date().toLocaleDateString('en-CA', { timeZone:
 
 /** tel: link for a phone number (digits and + only). */
 export const telHref = (p?: string | null) => (p ? `tel:${p.replace(/[^\d+]/g, '')}` : undefined);
+
+/** Endoscopy and USG are reported (findings, impression), not operated. */
+export const isReportService = (s: string) => s === 'endoscopy' || s === 'usg';
 
 export const WORKFLOW_TABLES = ['surgery_waitlist', 'ot_lists', 'ot_cases', 'booking_calls', 'opd_visits', 'care_tasks', 'investigations'];
 

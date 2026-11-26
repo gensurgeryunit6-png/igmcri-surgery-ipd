@@ -9,7 +9,7 @@ import { fmtDate, fmtDateTime } from '@/lib/format';
 import { downloadXlsx, type Report } from '@/lib/reports';
 import { ReportView } from '@/components/ReportView';
 import { IntraOpForm, blankIntraOp, type IntraOp } from '@/components/IntraOpNote';
-import { CASE_STATUS, LATERALITY, SESSIONS, serviceLabel, loadOtList, caseWho, type OtCase, type OtList, type WaitRow } from '@/lib/workflow';
+import { CASE_STATUS, LATERALITY, SESSIONS, serviceLabel, isReportService, loadOtList, caseWho, type OtCase, type OtList, type WaitRow } from '@/lib/workflow';
 
 export default function OtListPage() { return <Suspense><OtListView /></Suspense>; }
 
@@ -151,7 +151,7 @@ function CaseCard({ c, n, ready, editable, canOutcome, service, onUp, onDown, on
   const [note, setNote] = useState({ procedure_done: c.procedure, findings: '', postop_diagnosis: '', complications: '' });
   const [op, setOp] = useState<IntraOp>(blankIntraOp({ procedure_done: c.procedure, surgeon: c.surgeon ?? '', assistants: c.assistants ?? '', anaesthesia: c.anaesthesia ?? '', position: c.position ?? '' }));
   useEffect(() => setF(c), [c]);
-  const endo = service === 'endoscopy';
+  const endo = isReportService(service);
   const set = (k: keyof OtCase) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value || null });
 
   return (
