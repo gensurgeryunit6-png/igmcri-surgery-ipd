@@ -312,7 +312,50 @@ select pg_temp.as_user('00000000-0000-0000-0000-0000000000f6');
 select pg_temp.expect_error($q$select public.set_task_status((select id from public.care_tasks where description = 'Unassigned task'), 'done')$q$, 'not assigned to you');
 reset role;
 
--- 13. audit trail was written
+-- 13. automation outbox, serial results, dressings, USG, statistics
+do $$ begin
+  if not exists (select 1 from public.workflow_events where event_type = 'admission.created') then raise exception 'no admission event'; end if;
+  if not exists (select 1 from public.workflow_events where event_type = 'ot_list.finalised') then raise exception 'no ot list event'; end if;
+  if not exists (select 1 from public.workflow_events where event_type = 'investigation.ordered') then raise exception 'no investigation event'; end if;
+end $$;
+select private.emit_event((select unit6 from ctx), 'admission.created', 'admissions', gen_random_uuid(), (select dedupe_key from public.workflow_events where event_type = 'admission.created' limit 1));
+do $$ begin if (select count(*) from public.workflow_events where event_type = 'admission.created' and dedupe_key = (select dedupe_key from public.workflow_events where event_type = 'admission.created' order by id limit 1)) <> 1 then raise exception 'dedupe failed'; end if; end $$;
+create temp table claimed as select * from automation.claim_events(100);
+do $$ begin if (select count(*) from claimed) < 3 then raise exception 'claim failed'; end if; end $$;
+select automation.complete_event((select min(id) from claimed), true);
+select automation.log_run('B-ward-summary', 'success', (select min(id) from claimed));
+do $$ begin if (select status from public.workflow_events where id = (select min(id) from claimed)) <> 'done' then raise exception 'complete failed'; end if;
+  if not exists (select 1 from public.workflow_logs where workflow = 'B-ward-summary' and unit_id is not null) then raise exception 'log failed'; end if; end $$;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+select pg_temp.expect_error($q$select * from automation.claim_events(1)$q$, 'permission denied');
+insert into public.investigation_results (investigation_id, value, abnormal) select id, 'Hb 9.8', true from public.investigations where name = 'USG abdomen';
+insert into public.investigation_results (investigation_id, value) select id, 'Hb 10.6' from public.investigations where name = 'USG abdomen';
+do $$ begin
+  if (select result from public.investigations where name = 'USG abdomen') <> 'Hb 10.6' then raise exception 'latest result not shown'; end if;
+  if (select count(*) from public.investigation_results r join public.investigations i on i.id = r.investigation_id where i.name = 'USG abdomen') <> 2 then raise exception 'serial results missing'; end if;
+end $$;
+select pg_temp.expect_error($q$update public.investigation_results set value = 'x'$q$, '');
+insert into public.surgery_waitlist (patient_id, unit_id, list_type, planned_procedure) select (select id from public.patients where uhid = 'TEST-0004'), unit6, 'usg', 'USG-guided aspiration' from ctx;
+insert into public.ot_lists (unit_id, service, list_date, ot_room) select unit6, 'usg', current_date, 'USG room' from ctx;
+select public.add_booking_to_list((select id from public.ot_lists where service = 'usg'), (select id from public.surgery_waitlist where list_type = 'usg'));
+select public.set_ot_case_outcome((select id from public.ot_cases where procedure = 'USG-guided aspiration'), 'done', null, '{"findings":"20 ml pus"}');
+do $$ begin if exists (select 1 from public.surgeries where procedure_done = 'USG-guided aspiration') then raise exception 'USG should not create surgery'; end if; end $$;
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000f6');
+insert into public.dressing_records (admission_id, site, wound_status, findings) select id, 'Port sites', 'healthy', 'Clean, dry' from public.admissions where ip_number = 'IP-200';
+update public.dressing_records set findings = 'changed';
+do $$ begin if exists (select 1 from public.dressing_records where findings = 'changed') then raise exception 'intern should not edit dressings'; end if; end $$;
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b2');
+do $$ begin
+  if (select count(*) from public.v_stats_ot_monthly) = 0 then raise exception 'ot stats empty'; end if;
+  if (select count(*) from public.v_stats_weekly) = 0 then raise exception 'weekly stats empty'; end if;
+  if (select count(*) from public.v_stats_activity_monthly) = 0 then raise exception 'activity stats empty'; end if;
+  perform * from public.v_stats_occupancy_monthly; perform * from public.v_stats_procedures_monthly;
+end $$;
+reset role;
+
+-- 14. audit trail was written
 do $$ begin
   if (select count(*) from public.audit_logs where table_name = 'ward_round_entries') < 3 then raise exception 'audit missing'; end if;
 end $$;

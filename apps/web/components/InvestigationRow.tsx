@@ -14,6 +14,14 @@ export function InvestigationRow({ r, people, onChange, extra }: { r: Inv; peopl
   const [res, setRes] = useState('');
   const [abn, setAbn] = useState(false);
   const [err, setErr] = useState('');
+  const [repeat, setRepeat] = useState(false);
+  const [hist, setHist] = useState<{ id: string; value: string; abnormal: boolean; resulted_at: string }[] | null>(null);
+  const showHistory = async () => {
+    if (hist) { setHist(null); return; }
+    const { data } = await supabase.from('investigation_results').select('id, value, abnormal, resulted_at').eq('investigation_id', r.id).order('resulted_at', { ascending: false });
+    setHist(data ?? []);
+  };
+  const addResult = async () => done((await supabase.from('investigation_results').insert({ investigation_id: r.id, value: res.trim(), abnormal: abn })).error);
   const done = (error: unknown) => { if (error) setErr(friendlyError(error)); else { setErr(''); onChange(); } };
   const who = people.find((p) => p.id === r.assigned_person_id)?.full_name;
   const write = s.can('ipd.write');
@@ -36,12 +44,20 @@ export function InvestigationRow({ r, people, onChange, extra }: { r: Inv; peopl
             <option value="">Assign…</option>
             {people.filter((p) => ['pg', 'senior_resident', 'intern'].includes(p.category)).map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
           </select>)}
+        {r.status === 'resulted' && write && !repeat &&
+          <button className="ghost" style={{ padding: '4px 10px' }} onClick={() => setRepeat(true)}>Add repeat result</button>}
+        {r.status === 'resulted' &&
+          <button className="ghost" style={{ padding: '4px 10px' }} onClick={showHistory}>{hist ? 'Hide' : 'All results'}</button>}
         {r.status === 'resulted' && !r.reviewed_at && write &&
           <button className="ghost" style={{ padding: '4px 10px' }} onClick={async () => done((await supabase.from('investigations').update({ reviewed_at: new Date().toISOString(), reviewed_by: s.session!.user.id }).eq('id', r.id)).error)}>Mark reviewed</button>}
       </div>
-      {r.status === 'pending' && write && (
-        <form className="row" style={{ marginTop: 4, flexWrap: 'nowrap', gap: 6 }} onSubmit={async (e) => { e.preventDefault();
-          done((await supabase.from('investigations').update({ status: 'resulted', result: res.trim(), abnormal: abn, resulted_at: new Date().toISOString() }).eq('id', r.id)).error); }}>
+      {hist && (
+        <div style={{ marginTop: 4, paddingLeft: 8, borderLeft: '2px solid var(--line)' }}>
+          {hist.map((h) => <div key={h.id}>{fmtDateTime(h.resulted_at)} · <b style={{ color: h.abnormal ? 'var(--bad)' : undefined }}>{h.value}</b></div>)}
+        </div>
+      )}
+      {(r.status === 'pending' || repeat) && write && (
+        <form className="row" style={{ marginTop: 4, flexWrap: 'nowrap', gap: 6 }} onSubmit={async (e) => { e.preventDefault(); await addResult(); setRes(''); setAbn(false); setRepeat(false); setHist(null); }}>
           <input required placeholder="Result" value={res} onChange={(e) => setRes(e.target.value)} style={{ padding: '6px 8px' }} />
           <label className="small" style={{ margin: 0, whiteSpace: 'nowrap' }}><input type="checkbox" checked={abn} onChange={(e) => setAbn(e.target.checked)} style={{ width: 'auto' }} /> Abnormal</label>
           <button className="ghost" style={{ padding: '6px 10px' }}>Save</button>

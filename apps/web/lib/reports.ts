@@ -172,12 +172,14 @@ export const WORKFLOW_REPORTS = [
   { k: 'daily', label: 'Daily unit report', landscape: true },
   { k: 'otday', label: 'OT lists for the day', landscape: true },
   { k: 'preop', label: 'Pre-op work-up (all booked patients)', landscape: true },
-  { k: 'waitlist', label: 'Waiting list (Major, Minor, Endoscopy)', landscape: true },
+  { k: 'waitlist', label: 'Waiting list (Major, Minor, Endoscopy, USG)', landscape: true },
+  { k: 'weekly', label: 'Weekly admissions and discharges (last 12 weeks)', landscape: false },
+  { k: 'monthly', label: 'Monthly statistics: OT, procedures, occupancy, activity', landscape: true },
 ] as const;
 export type WorkflowKind = (typeof WORKFLOW_REPORTS)[number]['k'];
 export const isWorkflowKind = (k: string): k is WorkflowKind => WORKFLOW_REPORTS.some((r) => r.k === k);
 
-const SVC: Record<string, string> = { major: 'Major OT', minor: 'Minor OT', endoscopy: 'Endoscopy' };
+const SVC: Record<string, string> = { major: 'Major OT', minor: 'Minor OT', endoscopy: 'Endoscopy', usg: 'USG' };
 const yes = (ok: boolean, label: string) => `${ok ? '✓' : '✗'} ${label}`;
 type WRow = { id: string; list_type: string; priority: string; planned_procedure: string; diagnosis: string | null; planned_date: string | null;
   status: string; contact_status: string; contact_attempts: number; preop_ready: boolean; pac_status: string; physician_status: string;
@@ -207,7 +209,7 @@ export async function buildWorkflowReport(kind: WorkflowKind, unitId: string, un
 
   if (kind === 'otday') {
     const rows = await caseRows();
-    return { title: label, subtitle, sections: ['major', 'minor', 'endoscopy'].map((s) => caseSection(rows, s)) };
+    return { title: label, subtitle, sections: ['major', 'minor', 'endoscopy', 'usg'].map((s) => caseSection(rows, s)) };
   }
 
   if (kind === 'preop' || kind === 'waitlist') {
@@ -215,19 +217,21 @@ export async function buildWorkflowReport(kind: WorkflowKind, unitId: string, un
     if (r.error) throw new Error(r.error.message);
     const all = (r.data ?? []) as WRow[];
     if (kind === 'preop') {
-      return { title: label, subtitle: `${unitName} · as of now`, sections: ['major', 'minor', 'endoscopy'].map((sv) => { const list = all.filter((w) => w.list_type === sv); return { heading: `${SVC[sv]} · ${list.length} booked · ${list.filter((w) => !w.preop_ready).length} work-up pending`,
+      return { title: label, subtitle: `${unitName} · as of now`, sections: ['major', 'minor', 'endoscopy', 'usg'].map((sv) => { const list = all.filter((w) => w.list_type === sv); return { heading: `${SVC[sv]} · ${list.length} booked · ${list.filter((w) => !w.preop_ready).length} work-up pending`,
         columns: ['Bed / OPD', 'Patient', 'Procedure', 'Planned', 'Investigations', 'PAC', 'Physician', 'Consent', 'Blood', 'Responsible PG'],
         rows: list.map((w) => [w.is_admitted ? (w.bed ?? 'Admitted') : 'OPD', `${w.full_name} (${w.age_years ?? '?'}/${w.sex})\n${w.ip_number && w.is_admitted ? `IP ${w.ip_number}` : `UHID ${w.uhid}`}`, w.planned_procedure,
           w.planned_date ? fmtDate(w.planned_date) : '—', yes(w.investigations_ok, ''), w.pac_status.replace(/_/g, ' '), w.physician_status.replace(/_/g, ' '),
           w.consent_status, w.blood_status.replace(/_/g, ' '), w.pg_name ?? '']) }; }) };
     }
-    return { title: label, subtitle: `${unitName} · as of now`, sections: ['major', 'minor', 'endoscopy'].map((s) => {
+    return { title: label, subtitle: `${unitName} · as of now`, sections: ['major', 'minor', 'endoscopy', 'usg'].map((s) => {
       const list = all.filter((w) => w.list_type === s);
       return { heading: `${SVC[s]} · ${list.length}`, columns: ['Patient', 'UHID', 'Mobile', 'Procedure', 'Priority', 'Planned', 'Status', 'Call', 'Pre-op'],
         rows: list.map((w) => [`${w.full_name} (${w.age_years ?? '?'}/${w.sex})`, w.uhid, w.phone ?? '', w.planned_procedure, w.priority, w.planned_date ? fmtDate(w.planned_date) : '—',
           w.status, `${w.contact_status.replace(/_/g, ' ')}${w.contact_attempts ? ` (${w.contact_attempts})` : ''}`, w.preop_ready ? 'Ready' : 'Incomplete']) };
     }) };
   }
+
+  if (kind === 'weekly' || kind === 'monthly') return buildStatsReport(kind, unitId, unitName, date);
 
   // daily unit report
   const from = new Date(`${date}T00:00:00+05:30`).toISOString();
@@ -255,7 +259,7 @@ export async function buildWorkflowReport(kind: WorkflowKind, unitId: string, un
       rows: ((adm.data ?? []) as unknown as A[]).map((a) => [a.ip_number, `${a.patients.full_name} (${a.patients.age_years ?? '?'}/${a.patients.sex})`, a.admission_type ?? '', fmtDateTime(a.admitted_at)]) },
     { heading: `Discharges · ${(dis.data ?? []).length}`, columns: ['IP', 'Patient', 'Outcome', 'Time'],
       rows: ((dis.data ?? []) as unknown as A[]).map((a) => [a.ip_number, `${a.patients.full_name} (${a.patients.age_years ?? '?'}/${a.patients.sex})`, (a.status ?? '').replace(/_/g, ' '), fmtDateTime(a.discharged_at)]) },
-    caseSection(cases, 'major'), caseSection(cases, 'minor'), caseSection(cases, 'endoscopy'),
+    caseSection(cases, 'major'), caseSection(cases, 'minor'), caseSection(cases, 'endoscopy'), caseSection(cases, 'usg'),
     { heading: `Post-operative patients · ${pts.filter((p) => p.is_postop).length}`, columns: ['Bed', 'Patient', 'Diagnosis', 'POD', 'Status'],
       rows: pts.filter((p) => p.is_postop).map((p) => [bedLabel(p), who(p), p.diagnosis ?? '—', p.postop_day != null ? String(p.postop_day) : 'date not verified', p.last_status ? statusLabel(p.last_status) : '—']) },
     { heading: `Pending reports · ${d.investigations.length}`, columns: ['Bed', 'Patient', 'Investigation', 'Ordered'],
@@ -264,5 +268,50 @@ export async function buildWorkflowReport(kind: WorkflowKind, unitId: string, un
       rows: ((tasks.data ?? []) as { description: string; status: string; due_on: string | null; admission_id: string | null }[]).map((t) => [t.description,
         t.admission_id && map.has(t.admission_id) ? `${bedLabel(map.get(t.admission_id)!)} ${map.get(t.admission_id)!.full_name}` : '—', t.status === 'in_progress' ? 'In progress' : 'Pending', t.due_on ? fmtDate(t.due_on) : '']) },
     { ...crit.sections[0], heading: `Important clinical updates · ${crit.sections[0].rows.length} critical, worsening or under close monitoring` },
+  ] };
+}
+
+const monthLabel = (d: string) => new Date(`${d}T06:00:00Z`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' });
+
+async function buildStatsReport(kind: 'weekly' | 'monthly', unitId: string, unitName: string, date: string): Promise<Report> {
+  const q = async <T,>(p: PromiseLike<{ data: unknown; error: { message: string } | null }>) => { const r = await p; if (r.error) throw new Error(r.error.message); return (r.data ?? []) as T[]; };
+  if (kind === 'weekly') {
+    const since = new Date(new Date(`${date}T00:00:00+05:30`).getTime() - 84 * 864e5).toISOString().slice(0, 10);
+    type W = { week: string; admissions: number; emergency_admissions: number; discharges: number; deaths: number };
+    const rows = await q<W>(supabase.from('v_stats_weekly').select('*').eq('unit_id', unitId).gte('week', since).lte('week', date).order('week', { ascending: false }));
+    const tot = rows.reduce((a, r) => ({ ad: a.ad + r.admissions, em: a.em + r.emergency_admissions, di: a.di + r.discharges, de: a.de + r.deaths }), { ad: 0, em: 0, di: 0, de: 0 });
+    return { title: 'Weekly admissions and discharges', subtitle: `${unitName} · 12 weeks to ${fmtDate(`${date}T06:00:00Z`)}`, sections: [{
+      heading: `${tot.ad} admissions (${tot.em} emergency) · ${tot.di} discharges · ${tot.de} deaths`,
+      columns: ['Week starting', 'Admissions', 'Emergency', 'Discharges', 'Deaths'],
+      rows: rows.map((r) => [fmtDate(`${r.week}T06:00:00Z`), String(r.admissions), String(r.emergency_admissions), String(r.discharges), String(r.deaths)]) }] };
+  }
+  const month = `${date.slice(0, 7)}-01`;
+  type O = { service: string; listed: number; done: number; postponed: number; cancelled: number; emergency: number };
+  type P = { service: string; procedure: string; done: number };
+  type Oc = { ward: string; beds: number; bed_days: number; days: number };
+  type A = { full_name: string | null; rounds_written: number; rounds_verified: number; opd_visits: number; dressings: number; results_entered: number; tasks_completed: number };
+  type Wk = { admissions: number; discharges: number; deaths: number; emergency_admissions: number };
+  const next = new Date(new Date(`${month}T06:00:00Z`).setUTCMonth(new Date(`${month}T06:00:00Z`).getUTCMonth() + 1)).toISOString().slice(0, 10);
+  const [ot, pr, oc, ac, wk] = await Promise.all([
+    q<O>(supabase.from('v_stats_ot_monthly').select('*').eq('unit_id', unitId).eq('month', month)),
+    q<P>(supabase.from('v_stats_procedures_monthly').select('*').eq('unit_id', unitId).eq('month', month).order('done', { ascending: false })),
+    q<Oc>(supabase.from('v_stats_occupancy_monthly').select('*').eq('unit_id', unitId).eq('month', month)),
+    q<A>(supabase.from('v_stats_activity_monthly').select('*').eq('unit_id', unitId).eq('month', month).order('rounds_written', { ascending: false })),
+    q<Wk>(supabase.from('v_stats_weekly').select('*').eq('unit_id', unitId).gte('week', month).lt('week', next)),
+  ]);
+  const sum = (k: keyof Wk) => wk.reduce((a, r) => a + (r[k] as number), 0);
+  const svc = ['major', 'minor', 'endoscopy', 'usg'];
+  return { title: 'Monthly statistics', subtitle: `${unitName} · ${monthLabel(month)}`, sections: [
+    { heading: 'Admissions and discharges', columns: ['Admissions', 'Emergency', 'Discharges', 'Deaths'],
+      rows: [[String(sum('admissions')), String(sum('emergency_admissions')), String(sum('discharges')), String(sum('deaths'))]],
+      note: 'Counted by the week each starts in, so weeks crossing the month boundary fall in the month they start.' },
+    { heading: 'Major OT, Minor OT, Endoscopy and USG', columns: ['List', 'Listed', 'Done', 'Postponed', 'Cancelled', 'Emergency'],
+      rows: svc.map((v) => { const r = ot.find((x) => x.service === v); return [SVC[v], String(r?.listed ?? 0), String(r?.done ?? 0), String(r?.postponed ?? 0), String(r?.cancelled ?? 0), String(r?.emergency ?? 0)]; }) },
+    { heading: `Procedures done · ${pr.reduce((a, r) => a + r.done, 0)}`, columns: ['List', 'Procedure', 'Number'],
+      rows: pr.map((r) => [SVC[r.service] ?? r.service, r.procedure.charAt(0).toUpperCase() + r.procedure.slice(1), String(r.done)]) },
+    { heading: 'Ward occupancy', columns: ['Ward', 'Beds', 'Bed-days used', 'Days', 'Occupancy'],
+      rows: oc.map((r) => [r.ward, String(r.beds), String(r.bed_days), String(r.days), r.beds && r.days ? `${Math.round((r.bed_days / (r.beds * r.days)) * 100)}%` : '—']) },
+    { heading: 'Faculty and postgraduate activity', columns: ['Name', 'Rounds written', 'Rounds verified', 'OPD visits', 'Dressings', 'Results entered', 'Tasks completed'],
+      rows: ac.map((r) => [r.full_name ?? '—', String(r.rounds_written), String(r.rounds_verified), String(r.opd_visits), String(r.dressings), String(r.results_entered), String(r.tasks_completed)]) },
   ] };
 }

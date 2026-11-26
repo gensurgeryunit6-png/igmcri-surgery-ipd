@@ -261,6 +261,11 @@ function NewEntry({ admissionId, tasks, lastVitals, onSaved, hasNext }: {
         </label>
       ))}
       {!more && <button type="button" className="ghost" onClick={() => setMore(true)}>More fields: examination, investigations, treatment, assessment, consultant instructions, discharge plan</button>}
+      <button type="button" className="ghost" onClick={() => { setMore(true); setText((t) => ({
+        ...t,
+        complaints: t.complaints || 'Pain: \nNausea / vomiting: \nFlatus / stools: \nOral intake: ',
+        systemic_exam: t.systemic_exam || 'Wound: \nDrain: ___ ml, character: \nAbdomen: soft / distended; bowel sounds: \nCalves: ',
+        plan: t.plan || 'Diet: \nDrain: \nCatheter: \nMobilisation: \nAntibiotics: day ' })); }}>Use post-op note template</button>
 
       <div className="stack" style={{ gap: 6, background: '#fafbfc', border: '1px solid var(--line)', borderRadius: 8, padding: 10 }}>
         <div className="small muted" style={{ fontWeight: 600 }}>Pending tasks and investigations</div>

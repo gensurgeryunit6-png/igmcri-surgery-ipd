@@ -21,6 +21,7 @@ export const THEATRE: Tile[] = [
   { href: '/ot/', label: 'OT list generator', icon: 'ot' },
   { href: '/ot/?s=minor', label: 'Minor OT (ward)', icon: 'minor' },
   { href: '/ot/?s=endoscopy', label: 'Endoscopy', icon: 'scope' },
+  { href: '/ot/?s=usg', label: 'USG', icon: 'usg' },
   { href: OPD_MINOR_OT_URL, label: 'OPD minor OT', icon: 'minor', external: true },
 ];
 
