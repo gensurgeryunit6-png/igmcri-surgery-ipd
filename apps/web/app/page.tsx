@@ -31,6 +31,10 @@ export default function Home() {
       must(supabase.from('care_tasks').select('id, status, assigned_person_id').eq('unit_id', unitId!).in('status', ['open', 'in_progress', 'done'])),
       must(supabase.from('unit_personnel').select('id').eq('unit_id', unitId!).eq('user_id', me!)),
     ]);
+    const [duty, leave] = await Promise.all([
+      s.can('duty.review') ? must(supabase.from('duty_reports').select('id').eq('unit_id', unitId!).eq('status', 'submitted').neq('submitted_by', me!)) : Promise.resolve([]),
+      s.can('leave.approve') ? must(supabase.from('leave_requests').select('id').eq('unit_id', unitId!).eq('status', 'pending').neq('user_id', me!)) : Promise.resolve([]),
+    ]);
     const mine = new Set((mePeople as { id: string }[]).map((x) => x.id));
     const otToday = (sv: string) => (lists as { service: string; ot_cases: { status: string }[] }[]).filter((l) => l.service === sv)
       .reduce((k, l) => k + l.ot_cases.filter((x) => x.status !== 'postponed' && x.status !== 'cancelled').length, 0);
@@ -46,8 +50,9 @@ export default function Home() {
       pendingTests: (inv as unknown[]).length,
       myTasks: t.filter((x) => x.status !== 'done' && mine.has(x.assigned_person_id ?? '')).length,
       toVerifyTasks: t.filter((x) => x.status === 'done').length,
+      dutyToReview: (duty as unknown[]).length, leaveToApprove: (leave as unknown[]).length,
     };
-  }, [...LIVE_TABLES, 'notifications', 'ot_lists', 'ot_cases', 'care_tasks', 'investigations'], [unitId]);
+  }, [...LIVE_TABLES, 'notifications', 'ot_lists', 'ot_cases', 'care_tasks', 'investigations', 'duty_reports', 'leave_requests'], [unitId]);
 
   const c = live.data?.c;
   const pts = live.data?.pts ?? [];
@@ -62,6 +67,8 @@ export default function Home() {
   if (c?.critical) tasks.push({ n: c.critical, text: 'critical patients', href: '/census/' });
   const d = live.data;
   if (d?.myTasks) tasks.push({ n: d.myTasks, text: 'tasks assigned to you', href: '/tasks/' });
+  if (d?.dutyToReview) tasks.push({ n: d.dutyToReview, text: 'duty reports to review', href: '/duty/' });
+  if (d?.leaveToApprove) tasks.push({ n: d.leaveToApprove, text: 'leave requests to approve', href: '/leave/' });
   if (s.can('task.verify') && d?.toVerifyTasks) tasks.push({ n: d.toVerifyTasks, text: 'completed tasks to verify', href: '/tasks/' });
   if (s.can('ot.prepare') && d?.preopPending) tasks.push({ n: d.preopPending, text: 'booked patients with pre-op work-up pending', href: '/preop/' });
   if (s.can('ot.prepare') && d?.toCall) tasks.push({ n: d.toCall, text: 'waiting-list patients not called yet', href: '/waiting/' });
