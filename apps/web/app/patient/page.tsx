@@ -4,19 +4,20 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useSession } from '@/lib/session';
 import { supabase, friendlyError } from '@/lib/supabase';
-import { fmtDate, fmtDateTime, ageSex, nowLocalInput, istInputToIso, STATUS_LABEL } from '@/lib/format';
+import { fmtDate, fmtDateTime, ageSex, nowLocalInput, istInputToIso, isoToIstInput, STATUS_LABEL } from '@/lib/format';
+import { IntraOpForm, IntraOpView, blankIntraOp, intraOpToRow, type IntraOp } from '@/components/IntraOpNote';
 import { BedPicker } from '@/components/BedPicker';
 import { StatusBadge, AllergyField } from '@/components/ui';
 import { usePersonnel, lastPick, savePick } from '@/lib/personnel';
 import { BookingForm } from '@/components/BookingForm';
 import { InvestigationRow, type Inv } from '@/components/InvestigationRow';
-import { serviceLabel, BOOKING_STATUS, CASE_STATUS } from '@/lib/workflow';
+import { serviceLabel, BOOKING_STATUS, CASE_STATUS, DECISION, VISIT_TYPE } from '@/lib/workflow';
 import { Photos } from '@/components/Photos';
 
 type Patient = { id: string; uhid: string; full_name: string; age_years: number | null; sex: string;
   phone: string | null; phone_2: string | null; op_number: string | null; emergency_contact_name: string | null; emergency_contact_phone: string | null;
   allergy_status: 'yes' | 'no' | null; allergies: string | null; comorbidities: string[]; created_at: string };
-type Admission = { id: string; ip_number: string; admitted_at: string; admission_type: string; status: string; discharged_at: string | null;
+type Admission = { id: string; ip_number: string; admitted_at: string; admission_type: string; status: string; discharged_at: string | null; follow_up_on: string | null;
   planned_discharge_on: string | null; discharge_note: string | null; consultant_id: string | null; assigned_pg_id: string | null;
   consultant: { full_name: string } | null; pg: { full_name: string } | null;
   cp: { full_name: string } | null; pgp: { full_name: string } | null;
@@ -31,7 +32,7 @@ function PatientView() {
   const [adms, setAdms] = useState<Admission[]>([]);
   const [err, setErr] = useState('');
   const [editing, setEditing] = useState(false);
-  const [tab, setTab] = useState('admission');
+  const [tab, setTab] = useState(useSearchParams().get('tab') ?? 'registration');
 
   const load = useCallback(async () => {
     const [pp, aa] = await Promise.all([
@@ -47,6 +48,7 @@ function PatientView() {
   if (err) return <div className="msg err">{err}</div>;
   if (!p) return <p className="muted">Loading…</p>;
   const active = adms.find((a) => a.status === 'admitted');
+  const current = active ?? adms[0];
 
   return (
     <div className="stack">
@@ -81,20 +83,33 @@ function PatientView() {
         )}
       </div>
 
-      <div className="tabs">
-        {TABS.filter((t) => active || ['admission', 'surgery', 'photos', 'history'].includes(t.key)).map((t) => (
-          <button key={t.key} className={tab === t.key ? 'on' : ''} onClick={() => setTab(t.key)}>{t.label}</button>
+      <div className="tabs steps">
+        {TABS.filter((t) => current || !t.needsAdmission).map((t, i) => (
+          <button key={t.key} className={tab === t.key ? 'on' : ''} onClick={() => setTab(t.key)}>{t.step ? `${t.step}. ` : ''}{t.label}</button>
         ))}
       </div>
+      {!active && current && ['rounds', 'surgery', 'discharge'].includes(tab) && (
+        <div className="msg info small">Showing the last admission (IP {current.ip_number}, {current.status.replace(/_/g, ' ')}).</div>
+      )}
 
-      {tab === 'admission' && (active ? <ActiveAdmission a={active} onChange={load} />
-        : s.can('ipd.write') ? <AdmitForm patient={p} onDone={load} />
-        : <div className="card muted">Not currently admitted.</div>)}
-      {active && tab === 'diagnosis' && <Diagnoses admissionId={active.id} />}
-      {tab === 'surgery' && <Surgeries admissionId={active?.id ?? null} patient={p} />}
-      {active && tab === 'tests' && <Investigations admissionId={active.id} />}
-      {active && tab === 'medicines' && <Medications admissionId={active.id} />}
-      {active && tab === 'rounds' && <Rounds admissionId={active.id} />}
+      {tab === 'registration' && (
+        <>
+          {active ? <ActiveAdmission a={active} onChange={load} />
+            : s.can('ipd.write') ? <AdmitForm patient={p} onDone={load} />
+            : <div className="card muted">Not currently admitted.</div>}
+          {active && <Diagnoses admissionId={active.id} />}
+        </>
+      )}
+      {current && tab === 'rounds' && (
+        <>
+          <Rounds admissionId={current.id} active={!!active} />
+          <Investigations admissionId={current.id} />
+          <Medications admissionId={current.id} />
+        </>
+      )}
+      {tab === 'surgery' && <Surgeries admissionId={current?.id ?? null} patient={p} />}
+      {current && tab === 'discharge' && <DischargeStep a={current} onChange={load} />}
+      {tab === 'followup' && <FollowUp patient={p} last={current ?? null} onChange={load} />}
       {tab === 'photos' && <Photos patientId={p.id} admissionId={active?.id} />}
       {tab === 'history' && (
         <div className="card">
@@ -112,9 +127,13 @@ function PatientView() {
   );
 }
 
+/** Inpatient workflow: Registration → Ward rounds → Surgery → Discharge → Follow-up. */
 const TABS = [
-  { key: 'admission', label: 'Admission' }, { key: 'diagnosis', label: 'Diagnosis' }, { key: 'surgery', label: 'Procedures' },
-  { key: 'tests', label: 'Investigations' }, { key: 'medicines', label: 'Medicines' }, { key: 'rounds', label: 'Ward rounds' },
+  { key: 'registration', label: 'Registration', step: 1 },
+  { key: 'rounds', label: 'Ward rounds', step: 2, needsAdmission: true },
+  { key: 'surgery', label: 'Surgery', step: 3 },
+  { key: 'discharge', label: 'Discharge', step: 4, needsAdmission: true },
+  { key: 'followup', label: 'Follow-up', step: 5 },
   { key: 'photos', label: 'Photos' },
   { key: 'history', label: 'History' },
 ];
@@ -234,7 +253,7 @@ function AdmitForm({ patient, onDone }: { patient: Patient; onDone: () => void }
       </div>
       <div className="grid g3">
         <div className="field"><label className="req">IP number</label><input required value={f.ip} onChange={set('ip')} autoFocus /></div>
-        <div className="field"><label className="req">Admitted at</label><input type="datetime-local" required value={f.at} onChange={set('at')} /></div>
+        <div className="field"><label className="req">Admission date and time</label><input type="datetime-local" required value={f.at} onChange={set('at')} /></div>
         <div className="field"><label>Type</label><select value={f.type} onChange={set('type')}><option value="elective">Elective</option><option value="emergency">Emergency</option></select></div>
       </div>
       <div className="field"><label className="req">Ward</label>
@@ -263,11 +282,9 @@ function AdmitForm({ patient, onDone }: { patient: Patient; onDone: () => void }
 function ActiveAdmission({ a, onChange }: { a: Admission; onChange: () => void }) {
   const s = useSession();
   const [bed, setBed] = useState<{ label: string; ward: string } | null>(null);
-  const [mode, setMode] = useState<'' | 'move' | 'discharge'>('');
+  const [mode, setMode] = useState<'' | 'move'>('');
   const [newBed, setNewBed] = useState('');
-  const [dStatus, setDStatus] = useState('discharged');
-  const [dNote, setDNote] = useState('');
-  const [planned, setPlanned] = useState(a.planned_discharge_on ?? '');
+  const [admAt, setAdmAt] = useState(isoToIstInput(a.admitted_at));
   const [err, setErr] = useState('');
 
   const [moves, setMoves] = useState<{ from_at: string; to_at: string | null; reason: string | null; ward_beds: { label: string; wards: { name: string } } }[]>([]);
@@ -301,39 +318,24 @@ function ActiveAdmission({ a, onChange }: { a: Admission; onChange: () => void }
           <div><label>Consultant</label>{(a.cp ?? a.consultant)?.full_name ?? '—'}</div>
           <div><label>Assigned PG</label>{(a.pgp ?? a.pg)?.full_name ?? '—'}</div>
           <Team a={a} onChange={onChange} />
-          <div><label>Planned discharge</label>
+          <div><label>Admitted on</label>
             {s.can('ipd.write') ? (
               <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
-                <input type="date" value={planned} onChange={(e) => setPlanned(e.target.value)} style={{ padding: '5px 8px' }} />
-                {planned !== (a.planned_discharge_on ?? '') && <button className="ghost" style={{ padding: '5px 10px' }}
-                  onClick={() => run(() => supabase.from('admissions').update({ planned_discharge_on: planned || null }).eq('id', a.id))}>Save</button>}
-              </div>) : fmtDate(a.planned_discharge_on)}
+                <input type="datetime-local" value={admAt} onChange={(e) => setAdmAt(e.target.value)} style={{ padding: '5px 8px' }} />
+                {admAt !== isoToIstInput(a.admitted_at) && <button className="ghost" style={{ padding: '5px 10px' }}
+                  onClick={() => run(() => supabase.from('admissions').update({ admitted_at: istInputToIso(admAt) }).eq('id', a.id))}>Save</button>}
+              </div>) : fmtDateTime(a.admitted_at)}
           </div>
         </div>
         {s.can('ipd.write') && (
           <div className="row">
             <button className="ghost" onClick={() => setMode(mode === 'move' ? '' : 'move')}>{bed ? 'Move bed / ward' : 'Allocate bed'}</button>
-            <Link className="btn ghost" href={`/discharge/?a=${a.id}`}>Discharge summary</Link>
-            {s.can('ipd.discharge') && <button className="ghost" onClick={() => setMode(mode === 'discharge' ? '' : 'discharge')}>Discharge</button>}
           </div>
         )}
         {mode === 'move' && (
           <div className="card stack" style={{ background: '#fafbfc' }}>
             <BedPicker unitId={s.unit!.id} value={newBed} onChange={setNewBed} required />
             <div className="row"><button disabled={!newBed} onClick={() => run(() => supabase.rpc('move_patient_bed', { p_admission_id: a.id, p_bed_id: newBed, p_reason: bed ? 'Transfer' : 'Allocation' }))}>Confirm move</button>
-              <button className="ghost" onClick={() => setMode('')}>Cancel</button></div>
-          </div>
-        )}
-        {mode === 'discharge' && (
-          <div className="card stack" style={{ background: '#fafbfc' }}>
-            <div className="grid g2">
-              <div className="field"><label>Outcome</label><select value={dStatus} onChange={(e) => setDStatus(e.target.value)}>
-                <option value="discharged">Discharged</option><option value="transferred_out">Transferred to another unit / hospital</option>
-                <option value="dama">Discharged against medical advice</option><option value="absconded">Absconded</option><option value="expired">Expired</option></select></div>
-              <div className="field"><label>Note</label><input value={dNote} onChange={(e) => setDNote(e.target.value)} /></div>
-            </div>
-            <div className="msg info small">This closes the admission and frees the bed. It cannot be undone from the app.</div>
-            <div className="row"><button onClick={() => run(() => supabase.rpc('discharge_patient', { p_admission_id: a.id, p_status: dStatus, p_note: dNote || null }))}>Confirm {dStatus === 'discharged' ? 'discharge' : dStatus.replace('_', ' ')}</button>
               <button className="ghost" onClick={() => setMode('')}>Cancel</button></div>
           </div>
         )}
@@ -394,21 +396,21 @@ function Diagnoses({ admissionId }: { admissionId: string }) {
 
 function Surgeries({ admissionId, patient }: { admissionId: string | null; patient: Patient }) {
   const s = useSession();
-  type Row = { id: string; surgery_date: string; procedure_done: string; urgency: string; surgeon: string | null; findings: string | null; verified_at: string | null };
+  type Row = { id: string; surgery_date: string; procedure_done: string; urgency: string; verified_at: string | null } & Record<string, string | number | null>;
   type Bk = { id: string; list_type: string; planned_procedure: string; status: string; planned_date: string | null; preop_ready: boolean; status_reason: string | null };
   type Cs = { id: string; procedure: string; procedure_done: string | null; status: string; findings: string | null; postop_diagnosis: string | null; status_reason: string | null; ot_lists: { list_date: string; service: string } | null };
   const [rows, setRows] = useState<Row[]>([]);
   const [bks, setBks] = useState<Bk[]>([]);
   const [cases, setCases] = useState<Cs[]>([]);
   const [mode, setMode] = useState<'' | 'record' | 'book'>('');
-  const [f, setF] = useState({ date: new Date().toISOString().slice(0, 10), proc: '', urgency: 'emergency', surgeon: '' });
+  const [note, setNote] = useState<IntraOp>(blankIntraOp());
+  const [editId, setEditId] = useState('');
   const [err, setErr] = useState('');
-  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   const load = useCallback(async () => {
     const [b, c, r] = await Promise.all([
       supabase.from('surgery_waitlist').select('id, list_type, planned_procedure, status, planned_date, preop_ready, status_reason').eq('patient_id', patient.id).order('created_at', { ascending: false }),
       supabase.from('ot_cases').select('id, procedure, procedure_done, status, findings, postop_diagnosis, status_reason, ot_lists(list_date, service)').eq('patient_id', patient.id).order('created_at', { ascending: false }),
-      admissionId ? supabase.from('surgeries').select('id, surgery_date, procedure_done, urgency, surgeon, findings, verified_at').eq('admission_id', admissionId).order('surgery_date', { ascending: false }) : Promise.resolve({ data: [] }),
+      admissionId ? supabase.from('surgeries').select('*').eq('admission_id', admissionId).order('surgery_date', { ascending: false }) : Promise.resolve({ data: [] }),
     ]);
     setBks((b.data as Bk[]) ?? []); setCases((c.data as unknown as Cs[]) ?? []); setRows((r.data as Row[]) ?? []);
   }, [patient.id, admissionId]);
@@ -419,7 +421,7 @@ function Surgeries({ admissionId, patient }: { admissionId: string | null; patie
   return (
     <div className="stack">
       <div className="card stack" style={{ gap: 6 }}>
-        <h3 style={{ margin: 0 }}>Waiting list</h3>
+        <h3 style={{ margin: 0 }}>Planned procedures</h3>
         {open.length === 0 && <p className="muted small" style={{ margin: 0 }}>Not booked for any procedure.</p>}
         {open.map((b) => (
           <Link key={b.id} href={`/booking/?id=${b.id}`} className="spread small" style={{ color: 'inherit' }}>
@@ -428,41 +430,60 @@ function Surgeries({ admissionId, patient }: { admissionId: string | null; patie
           </Link>
         ))}
         {s.can('ot.prepare') && mode !== 'book' && <button className="ghost" onClick={() => setMode('book')}>Book a procedure</button>}
+        {open.length > 0 && <div className="small muted">Pre-op work-up is done on each booking (tap it), for Major OT, Minor OT and Endoscopy alike.</div>}
       </div>
       {mode === 'book' && <BookingForm patientId={patient.id} phone={patient.phone} admissionId={admissionId} onDone={() => { setMode(''); load(); }} onCancel={() => setMode('')} />}
 
-      <div className="card stack" style={{ gap: 6 }}>
-        <h3 style={{ margin: 0 }}>Operations and procedures</h3>
-        {cases.length === 0 && rows.length === 0 && <p className="muted small" style={{ margin: 0 }}>None yet.</p>}
-        {cases.map((c) => (
-          <div key={c.id} className="small" style={{ borderBottom: '1px solid #edf0f4', padding: '4px 0' }}>
-            <div className="spread"><span><b>{c.ot_lists ? fmtDate(c.ot_lists.list_date) : ''}</b> · {serviceLabel(c.ot_lists?.service ?? '')} · {c.procedure_done ?? c.procedure}</span>
-              <span className={`badge ${c.status === 'done' ? 'ok' : c.status === 'planned' ? 'teal' : 'warn'}`}>{CASE_STATUS[c.status]}</span></div>
-            {c.findings && <div className="muted">Findings: {c.findings}</div>}
-            {c.postop_diagnosis && <div className="muted">Post-op diagnosis: {c.postop_diagnosis}</div>}
-            {c.status_reason && <div className="muted">Reason: {c.status_reason}</div>}
-          </div>
-        ))}
-        {rows.map((r) => (
-          <div key={r.id} className="small spread">
-            <span>Surgery date <b>{fmtDate(r.surgery_date)}</b> · {r.procedure_done} <span className="muted">({r.urgency}{r.surgeon ? `, ${r.surgeon}` : ''})</span></span>
-            {r.verified_at ? <span className="badge ok">Verified</span>
-              : s.can('round.verify') ? <button className="ghost" style={{ padding: '4px 10px' }} onClick={async () => done((await supabase.from('surgeries').update({ verified_at: new Date().toISOString(), verified_by: s.session!.user.id }).eq('id', r.id)).error)}>Verify date</button>
-              : <span className="badge warn">Unverified</span>}
-          </div>
-        ))}
-        {admissionId && <p className="muted small" style={{ margin: 0 }}>Post-op day counts from the verified surgery date.</p>}
-        {admissionId && s.can('ipd.write') && mode === '' && <button className="ghost" onClick={() => setMode('record')}>Record an operation done outside an OT list</button>}
-        {mode === 'record' && admissionId && (
-          <form className="stack" onSubmit={async (e) => { e.preventDefault(); done((await supabase.from('surgeries').insert({ admission_id: admissionId, surgery_date: f.date, procedure_done: f.proc.trim(), urgency: f.urgency, surgeon: f.surgeon || null })).error); }}>
-            <div className="grid g2"><div className="field"><label className="req">Date</label><input type="date" required value={f.date} onChange={set('date')} /></div>
-              <div className="field"><label>Urgency</label><select value={f.urgency} onChange={set('urgency')}><option value="emergency">Emergency</option><option value="elective">Elective</option></select></div></div>
-            <div className="field"><label className="req">Procedure done</label><input required value={f.proc} onChange={set('proc')} /></div>
-            <div className="field"><label>Operating surgeon</label><input value={f.surgeon} onChange={set('surgeon')} /></div>
-            <div className="row"><button>Save</button><button type="button" className="ghost" onClick={() => setMode('')}>Cancel</button></div>
-          </form>
-        )}
-      </div>
+      {admissionId && (
+        <div className="card stack" style={{ gap: 8 }}>
+          <div className="spread"><h3 style={{ margin: 0 }}>Intra-operative notes</h3>
+            {s.can('ipd.write') && mode === '' && <button className="ghost" style={{ padding: '6px 12px' }} onClick={() => { setNote(blankIntraOp({ surgery_date: new Date().toISOString().slice(0, 10), urgency: 'emergency' })); setMode('record'); }}>+ Record an operation</button>}</div>
+          {rows.length === 0 && mode !== 'record' && <p className="muted small" style={{ margin: 0 }}>No operation recorded for this admission. Operations done from an OT list appear here automatically.</p>}
+          {rows.map((r) => (
+            <div key={r.id} className="stack" style={{ gap: 6, borderBottom: '1px solid #edf0f4', paddingBottom: 8 }}>
+              <div className="spread"><span><b>{fmtDate(r.surgery_date)}</b> · {r.procedure_done} <span className="muted">({r.urgency})</span></span>
+                {r.verified_at ? <span className="badge ok">Date verified</span>
+                  : s.can('round.verify') ? <button className="ghost" style={{ padding: '4px 10px' }} onClick={async () => done((await supabase.from('surgeries').update({ verified_at: new Date().toISOString(), verified_by: s.session!.user.id }).eq('id', r.id)).error)}>Verify date</button>
+                  : <span className="badge warn">Date unverified</span>}</div>
+              {editId === r.id ? (
+                <div className="stack">
+                  <IntraOpForm value={note} onChange={setNote} />
+                  <div className="row"><button onClick={async () => { const row = intraOpToRow(note); delete row.surgery_date; delete row.urgency;
+                    done((await supabase.from('surgeries').update(row).eq('id', r.id)).error); setEditId(''); }}>Save note</button>
+                    <button className="ghost" onClick={() => setEditId('')}>Cancel</button></div>
+                </div>
+              ) : (
+                <>
+                  <IntraOpView s={r} />
+                  {s.can('ipd.write') && <button className="ghost" style={{ padding: '4px 10px', alignSelf: 'flex-start' }} onClick={() => { setNote(blankIntraOp(r as unknown as Partial<IntraOp>)); setEditId(r.id); }}>Write / edit intra-op note</button>}
+                </>
+              )}
+            </div>
+          ))}
+          {mode === 'record' && (
+            <form className="stack" onSubmit={async (e) => { e.preventDefault(); done((await supabase.from('surgeries').insert({ admission_id: admissionId, ...intraOpToRow(note) })).error); }}>
+              <IntraOpForm value={note} onChange={setNote} withDate />
+              <div className="row"><button>Save operation</button><button type="button" className="ghost" onClick={() => setMode('')}>Cancel</button></div>
+            </form>
+          )}
+          <p className="muted small" style={{ margin: 0 }}>Post-op day counts from the verified surgery date.</p>
+        </div>
+      )}
+
+      {cases.length > 0 && (
+        <div className="card stack" style={{ gap: 6 }}>
+          <h3 style={{ margin: 0 }}>OT, minor OT and endoscopy record</h3>
+          {cases.map((c) => (
+            <div key={c.id} className="small" style={{ borderBottom: '1px solid #edf0f4', padding: '4px 0' }}>
+              <div className="spread"><span><b>{c.ot_lists ? fmtDate(c.ot_lists.list_date) : ''}</b> · {serviceLabel(c.ot_lists?.service ?? '')} · {c.procedure_done ?? c.procedure}</span>
+                <span className={`badge ${c.status === 'done' ? 'ok' : c.status === 'planned' ? 'teal' : 'warn'}`}>{CASE_STATUS[c.status]}</span></div>
+              {c.findings && <div className="muted">Findings: {c.findings}</div>}
+              {c.postop_diagnosis && <div className="muted">{c.ot_lists?.service === 'endoscopy' ? 'Impression' : 'Post-op diagnosis'}: {c.postop_diagnosis}</div>}
+              {c.status_reason && <div className="muted">Reason: {c.status_reason}</div>}
+            </div>
+          ))}
+        </div>
+      )}
       {err && <div className="msg err">{err}</div>}
     </div>
   );
@@ -521,13 +542,13 @@ function Medications({ admissionId }: { admissionId: string }) {
   );
 }
 
-function Rounds({ admissionId }: { admissionId: string }) {
+function Rounds({ admissionId, active }: { admissionId: string; active: boolean }) {
   type Row = { id: string; round_at: string; round_type: string; clinical_status: string; postop_day: number | null; plan: string | null;
     complaints: string | null; verified_at: string | null; author: { full_name: string } | null };
   const { rows } = usePanel<Row>('ward_round_entries', admissionId, '*, author:staff!ward_round_entries_entered_by_fkey(full_name)', 'round_at');
   return (
     <div className="card stack">
-      <div className="spread"><h3 style={{ margin: 0 }}>Ward rounds</h3><Link className="btn teal" style={{ padding: '6px 12px' }} href={`/round/?a=${admissionId}`}>Open rounds</Link></div>
+      <div className="spread"><h3 style={{ margin: 0 }}>Daily ward rounds</h3>{active && <Link className="btn teal" style={{ padding: '6px 12px' }} href={`/round/?a=${admissionId}`}>Write today’s round</Link>}</div>
       {rows.length === 0 ? <p className="muted small">No ward-round entries yet.</p> : rows.map((r) => (
         <div key={r.id} className="small" style={{ borderBottom: '1px solid #edf0f4', paddingBottom: 6 }}>
           <div className="spread"><span><b>{fmtDateTime(r.round_at)}</b> · {r.round_type}{r.postop_day != null && ` · POD ${r.postop_day}`} · {r.author?.full_name}</span>
@@ -578,6 +599,102 @@ function Team({ a, onChange }: { a: Admission; onChange: () => void }) {
       </div>
       {err && <div className="msg err">{err}</div>}
       <div className="row"><button onClick={save}>Save team</button><button className="ghost" onClick={() => setEdit(false)}>Cancel</button></div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- step 4: discharge
+function DischargeStep({ a, onChange }: { a: Admission; onChange: () => void }) {
+  const s = useSession();
+  const [sum, setSum] = useState<{ status: string; finalised_at: string | null } | null>(null);
+  const [planned, setPlanned] = useState(a.planned_discharge_on ?? '');
+  const [fu, setFu] = useState(a.follow_up_on ?? '');
+  const [dStatus, setDStatus] = useState('discharged');
+  const [dNote, setDNote] = useState('');
+  const [confirm, setConfirm] = useState(false);
+  const [err, setErr] = useState('');
+  useEffect(() => { supabase.from('discharge_summaries').select('status, finalised_at').eq('admission_id', a.id).maybeSingle().then(({ data }) => setSum(data)); }, [a.id]);
+  const run = async (p: PromiseLike<{ error: unknown }>) => { setErr(''); const { error } = await p; if (error) setErr(friendlyError(error)); else { setConfirm(false); onChange(); } };
+  const admitted = a.status === 'admitted';
+  return (
+    <div className="stack">
+      <div className="card stack">
+        <h3 style={{ margin: 0 }}>Discharge summary</h3>
+        <div className="spread small">
+          <span>{sum ? (sum.status === 'final' ? `Approved ${fmtDateTime(sum.finalised_at)}` : 'Draft — not yet approved by faculty') : 'Not started'}</span>
+          <span className={`badge ${sum?.status === 'final' ? 'ok' : 'warn'}`}>{sum?.status === 'final' ? 'Final' : sum ? 'Draft' : 'To do'}</span>
+        </div>
+        <Link className="btn teal" href={`/discharge/?a=${a.id}`}>{sum ? 'Open discharge summary' : 'Write discharge summary'}</Link>
+      </div>
+      <div className="card stack">
+        <h3 style={{ margin: 0 }}>Dates</h3>
+        <div className="grid g2">
+          {admitted && <div className="field"><label>Planned discharge</label>
+            <input type="date" disabled={!s.can('ipd.write')} value={planned} onChange={(e) => setPlanned(e.target.value)} /></div>}
+          <div className="field"><label>Follow-up date</label>
+            <input type="date" disabled={!s.can('ipd.write')} value={fu} onChange={(e) => setFu(e.target.value)} /></div>
+        </div>
+        {s.can('ipd.write') && (planned !== (a.planned_discharge_on ?? '') || fu !== (a.follow_up_on ?? '')) &&
+          <button onClick={() => run(supabase.from('admissions').update({ planned_discharge_on: planned || null, follow_up_on: fu || null }).eq('id', a.id))}>Save dates</button>}
+        <div className="small muted">The follow-up date puts the patient on the OPD follow-up list on that day.</div>
+      </div>
+      {admitted ? (s.can('ipd.discharge') && (
+        <div className="card stack">
+          <h3 style={{ margin: 0 }}>Discharge the patient</h3>
+          {sum?.status !== 'final' && <div className="msg info small">The discharge summary is not approved yet.</div>}
+          {!fu && <div className="msg info small">No follow-up date set.</div>}
+          <div className="grid g2">
+            <div className="field"><label>Outcome</label><select value={dStatus} onChange={(e) => setDStatus(e.target.value)}>
+              <option value="discharged">Discharged</option><option value="transferred_out">Transferred to another unit / hospital</option>
+              <option value="dama">Discharged against medical advice</option><option value="absconded">Absconded</option><option value="expired">Expired</option></select></div>
+            <div className="field"><label>Note</label><input value={dNote} onChange={(e) => setDNote(e.target.value)} /></div>
+          </div>
+          {!confirm ? <button onClick={() => setConfirm(true)}>{dStatus === 'discharged' ? 'Discharge' : 'Record outcome'}</button> : (
+            <>
+              <div className="msg info small">This closes the admission and frees the bed. It cannot be undone from the app.</div>
+              <div className="row"><button className="danger" onClick={() => run(supabase.rpc('discharge_patient', { p_admission_id: a.id, p_status: dStatus, p_note: dNote || null }))}>Confirm</button>
+                <button className="ghost" onClick={() => setConfirm(false)}>Back</button></div>
+            </>
+          )}
+        </div>
+      )) : (
+        <div className="card small">Outcome: <b>{a.status.replace(/_/g, ' ')}</b> on {fmtDateTime(a.discharged_at)}</div>
+      )}
+      {err && <div className="msg err">{err}</div>}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- step 5: follow-up
+function FollowUp({ patient, last, onChange }: { patient: Patient; last: Admission | null; onChange: () => void }) {
+  const s = useSession();
+  type V = { id: string; visit_at: string; visit_type: string; diagnosis: string | null; notes: string | null; decision: string; follow_up_on: string | null };
+  const [visits, setVisits] = useState<V[]>([]);
+  useEffect(() => {
+    supabase.from('opd_visits').select('id, visit_at, visit_type, diagnosis, notes, decision, follow_up_on').eq('patient_id', patient.id)
+      .order('visit_at', { ascending: false }).limit(20).then(({ data }) => setVisits((data as V[]) ?? []));
+  }, [patient.id]);
+  const after = last?.discharged_at ? visits.filter((v) => v.visit_at >= last.discharged_at!) : visits;
+  const nextDate = [last?.follow_up_on, visits[0]?.follow_up_on].filter(Boolean).sort().at(-1) as string | undefined;
+  return (
+    <div className="stack">
+      <div className="card stack">
+        <div className="spread"><h3 style={{ margin: 0 }}>Next follow-up</h3>
+          <span className="badge teal">{nextDate ? fmtDate(nextDate) : 'Not set'}</span></div>
+        {last && last.status === 'admitted' && <div className="small muted">Set the follow-up date in step 4 (Discharge).</div>}
+        {s.can('patient.write') && <Link className="btn teal" href={`/opd-visit/?p=${patient.id}&t=${last?.status === 'discharged' ? 'post_op' : 'follow_up'}`}>Record follow-up visit</Link>}
+      </div>
+      <div className="card stack" style={{ gap: 6 }}>
+        <h3 style={{ margin: 0 }}>{last?.discharged_at ? 'Visits since discharge' : 'OPD visits'}</h3>
+        {after.length === 0 && <p className="muted small" style={{ margin: 0 }}>None yet.</p>}
+        {after.map((v) => (
+          <div key={v.id} className="small" style={{ borderBottom: '1px solid #edf0f4', padding: '4px 0' }}>
+            <div className="spread"><b>{fmtDate(v.visit_at)} · {VISIT_TYPE[v.visit_type]}</b><span className="badge">{DECISION[v.decision]}</span></div>
+            <div>{v.diagnosis ?? '—'}</div>{v.notes && <div className="muted">{v.notes}</div>}
+            {v.follow_up_on && <div className="muted">Next: {fmtDate(v.follow_up_on)}</div>}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

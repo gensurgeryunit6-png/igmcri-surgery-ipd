@@ -23,6 +23,13 @@ export function nowLocalInput() {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+/** ISO timestamp → datetime-local value in IST. */
+export function isoToIstInput(iso: string) {
+  const d = new Date(new Date(iso).toLocaleString('en-US', { timeZone: TZ }));
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 /** Convert a datetime-local value entered in IST to an ISO string. */
 export function istInputToIso(v: string) {
   return new Date(`${v}:00+05:30`).toISOString();

@@ -278,12 +278,12 @@ reset role;
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
 select pg_temp.expect_error($q$update public.ot_cases set procedure = 'Open cholecystectomy' where procedure = 'Lap cholecystectomy'$q$, 'final');
 select public.set_ot_case_outcome((select id from public.ot_cases where procedure = 'Lap cholecystectomy'), 'done', null,
-  '{"findings":"Thick-walled gallbladder","postop_diagnosis":"Chronic cholecystitis"}');
+  '{"findings":"Thick-walled gallbladder","postop_diagnosis":"Chronic cholecystitis","blood_loss_ml":"50","start_time":"09:10","specimen":"Gallbladder for HPE"}');
 select pg_temp.expect_error($q$select public.set_ot_case_outcome((select id from public.ot_cases where manual_name = 'Walk-in Case'), 'cancelled', '')$q$, 'reason');
 select public.set_ot_case_outcome((select id from public.ot_cases where manual_name = 'Walk-in Case'), 'postponed', 'OT time over');
 do $$ begin
   if (select status from public.surgery_waitlist where planned_procedure = 'Lap cholecystectomy') <> 'completed' then raise exception 'booking not completed'; end if;
-  if not exists (select 1 from public.surgeries s join public.admissions a on a.id = s.admission_id where a.ip_number = 'IP-200' and s.procedure_done = 'Lap cholecystectomy') then raise exception 'surgery not recorded'; end if;
+  if not exists (select 1 from public.surgeries s join public.admissions a on a.id = s.admission_id where a.ip_number = 'IP-200' and s.procedure_done = 'Lap cholecystectomy' and s.blood_loss_ml = 50 and s.specimen = 'Gallbladder for HPE') then raise exception 'surgery not recorded with intra-op note'; end if;
 end $$;
 insert into public.care_tasks (unit_id, kind, description, assigned_person_id) select unit6, 'records', 'Update OT register', (select id from public.unit_personnel where full_name = 'Intern One') from ctx;
 insert into public.investigations (admission_id, name) select id, 'USG abdomen' from public.admissions where ip_number = 'IP-200';

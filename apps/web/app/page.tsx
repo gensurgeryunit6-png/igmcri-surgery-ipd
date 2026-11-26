@@ -29,7 +29,7 @@ export default function Home() {
       must(supabase.from('v_inpatients').select('admission_id, assigned_pg_id, rounds_today, unverified_today, awaiting_surgery, preop_ready').eq('unit_id', unitId!)),
       must(supabase.from('notifications').select('id', { count: 'exact', head: false }).is('read_at', null).limit(50)),
       must(supabase.from('ot_lists').select('service, ot_cases(status)').eq('unit_id', unitId!).eq('list_date', today)),
-      must(supabase.from('surgery_waitlist').select('id, contact_status').eq('unit_id', unitId!).in('status', ['waiting', 'postponed'])),
+      must(supabase.from('surgery_waitlist').select('id, contact_status, status, preop_ready').eq('unit_id', unitId!).in('status', ['waiting', 'postponed', 'scheduled'])),
       must(supabase.from('investigations').select('id').eq('unit_id', unitId!).eq('status', 'pending')),
       must(supabase.from('care_tasks').select('id, status, assigned_person_id').eq('unit_id', unitId!).in('status', ['open', 'in_progress', 'done'])),
       must(supabase.from('unit_personnel').select('id').eq('unit_id', unitId!).eq('user_id', me!)),
@@ -42,7 +42,10 @@ export default function Home() {
       c: c as Census | null, unread: (n as unknown[]).length,
       pts: pts as { assigned_pg_id: string | null; rounds_today: number; unverified_today: number; awaiting_surgery: boolean; preop_ready: boolean | null }[],
       major: otToday('major'), minor: otToday('minor'), endo: otToday('endoscopy'),
-      waiting: (wait as unknown[]).length, toCall: (wait as { contact_status: string }[]).filter((w) => w.contact_status === 'not_contacted').length,
+      waiting: (wait as { status: string }[]).filter((w) => w.status !== 'scheduled').length,
+      toCall: (wait as { contact_status: string; status: string }[]).filter((w) => w.status !== 'scheduled' && w.contact_status === 'not_contacted').length,
+      preopPending: (wait as { preop_ready: boolean }[]).filter((w) => !w.preop_ready).length,
+      booked: (wait as unknown[]).length,
       pendingTests: (inv as unknown[]).length,
       myTasks: t.filter((x) => x.status !== 'done' && mine.has(x.assigned_person_id ?? '')).length,
       toVerifyTasks: t.filter((x) => x.status === 'done').length,
@@ -54,7 +57,6 @@ export default function Home() {
   const mine = pts.filter((p) => p.assigned_pg_id === me);
   const toVerify = pts.reduce((n, p) => n + p.unverified_today, 0);
   const dueMine = mine.filter((p) => !p.rounds_today).length;
-  const preopCount = pts.filter((p) => p.awaiting_surgery).length;
 
   const tasks: { text: string; href: string; n: number }[] = [];
   if (s.can('round.verify') && toVerify) tasks.push({ n: toVerify, text: 'round notes to review', href: '/verify/' });
@@ -64,8 +66,7 @@ export default function Home() {
   const d = live.data;
   if (d?.myTasks) tasks.push({ n: d.myTasks, text: 'tasks assigned to you', href: '/tasks/' });
   if (s.can('task.verify') && d?.toVerifyTasks) tasks.push({ n: d.toVerifyTasks, text: 'completed tasks to verify', href: '/tasks/' });
-  const preopDue = pts.filter((p) => p.awaiting_surgery && p.preop_ready === false).length;
-  if (s.can('ot.prepare') && preopDue) tasks.push({ n: preopDue, text: 'inpatients with pre-op work-up incomplete', href: '/waiting/' });
+  if (s.can('ot.prepare') && d?.preopPending) tasks.push({ n: d.preopPending, text: 'booked patients with pre-op work-up pending', href: '/preop/' });
   if (s.can('ot.prepare') && d?.toCall) tasks.push({ n: d.toCall, text: 'waiting-list patients not called yet', href: '/waiting/' });
 
   const groups: Group[] = [
@@ -80,7 +81,8 @@ export default function Home() {
     ] },
     { title: 'Operation theatre', tiles: [
       { href: '/waiting/', label: 'Waiting list', icon: 'patients', badge: d?.waiting || undefined },
-      { href: '/ot/', label: 'OT lists', icon: 'ot' },
+      { href: '/preop/', label: 'Pre-op work-up', icon: 'census', badge: d?.preopPending || undefined },
+      { href: '/ot/', label: 'OT list generator', icon: 'ot' },
       { href: '/ot/?s=endoscopy', label: 'Endoscopy', icon: 'scope' },
       { href: OPD_MINOR_OT_URL, label: 'OPD minor OT', icon: 'minor', external: true },
     ] },
@@ -118,7 +120,7 @@ export default function Home() {
         <div className="countgrid">
           {[
             { n: c?.male_ward, l: 'Male ward', h: '/census/' }, { n: c?.female_ward, l: 'Female ward', h: '/census/' },
-            { n: c?.special_ward, l: 'Special ward', h: '/census/' }, { n: preopCount, l: 'Pre-op', h: '/waiting/' },
+            { n: c?.special_ward, l: 'Special ward', h: '/census/' }, { n: d?.preopPending, l: 'Pre-op pending', h: '/preop/' },
             { n: d?.major, l: 'Major OT today', h: '/ot/' }, { n: d?.minor, l: 'Minor OT today', h: '/ot/?s=minor' },
             { n: d?.endo, l: 'Endoscopy today', h: '/ot/?s=endoscopy' }, { n: c?.postoperative, l: 'Post-op', h: '/census/' },
             { n: d?.pendingTests, l: 'Reports pending', h: '/tasks/?v=tests' }, { n: d?.waiting, l: 'Waiting list', h: '/waiting/' },
