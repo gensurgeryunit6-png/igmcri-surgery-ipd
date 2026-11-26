@@ -9,6 +9,9 @@ export default function MorePage() {
   const s = useSession();
   const items = [
     { href: '/notifications/', label: 'Notifications', icon: 'reports', note: 'Messages and alerts for you' },
+    { href: '/duty/', label: 'Duty report', icon: 'rounds', note: 'Handover after each duty; faculty review' },
+    { href: '/leave/', label: 'Leave', icon: 'user', note: 'Apply, approve, see who is away' },
+    { href: '/protocols/', label: 'Unit protocols', icon: 'reports', note: 'The unit’s agreed protocols' },
     { href: '/backup/', label: 'Backup', icon: 'download', perm: 'users.manage', note: 'Download all unit records (weekly)' },
     { href: '/personnel/', label: 'Unit personnel', icon: 'team', note: 'Consultants, PGs and interns of the unit' },
     { href: '/users/', label: 'User management', icon: 'team', perm: 'users.manage', note: 'Give or remove access, set roles' },

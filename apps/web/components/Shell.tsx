@@ -10,7 +10,7 @@ import { Icon } from './Icon';
 const TITLES: [string, string][] = [
   ['/rounds', 'Ward rounds'], ['/round', 'Ward round'], ['/verify', 'Review rounds'], ['/reports', 'Downloads'],
   ['/census', 'Inpatients'], ['/wards', 'Ward board'], ['/patients', 'Patients'], ['/patient', 'Patient'],
-  ['/users', 'User management'], ['/more', 'More'], ['/notifications', 'Notifications'], ['/settings', 'Wards and beds'], ['/discharge', 'Discharge summary'], ['/saved-reports', 'Saved morning reports'], ['/account', 'My account'], ['/personnel', 'Unit personnel'], ['/opd-visit', 'OPD visit'], ['/opd', 'OPD'], ['/waiting', 'Waiting list'], ['/booking', 'Booking'], ['/ot-list', 'OT list'], ['/ot', 'OT lists'], ['/preop', 'Pre-op work-up'], ['/tasks', 'Tasks'], ['/clinical', 'Clinical'], ['/backup', 'Backup'], ['/theatre', 'Operation theatre'],
+  ['/users', 'User management'], ['/more', 'More'], ['/notifications', 'Notifications'], ['/settings', 'Wards and beds'], ['/discharge', 'Discharge summary'], ['/saved-reports', 'Saved morning reports'], ['/account', 'My account'], ['/personnel', 'Unit personnel'], ['/opd-visit', 'OPD visit'], ['/opd', 'OPD'], ['/waiting', 'Waiting list'], ['/booking', 'Booking'], ['/ot-list', 'OT list'], ['/ot', 'OT lists'], ['/preop', 'Pre-op work-up'], ['/tasks', 'Tasks'], ['/clinical', 'Clinical'], ['/backup', 'Backup'], ['/duty', 'Duty report'], ['/leave', 'Leave'], ['/protocols', 'Unit protocols'], ['/theatre', 'Operation theatre'],
 ];
 const PUBLIC_PATHS = ['/login', '/reset'];
 
@@ -65,7 +65,7 @@ function Dock({ path, canAdd }: { path: string; canAdd: boolean }) {
     { href: '/clinical/', label: 'Clinical', icon: 'stetho', on: ['/clinical', '/opd', '/census', '/wards', '/round', '/verify', '/tasks', '/patient', '/discharge'].some((p) => path.startsWith(p)) },
     { href: '/theatre/', label: 'Theatre', icon: 'ot', on: ['/theatre', '/waiting', '/booking', '/preop', '/ot'].some((p) => path.startsWith(p)) },
     { href: '/reports/', label: 'Downloads', icon: 'download', on: path.startsWith('/reports') || path.startsWith('/saved-reports') },
-    { href: '/more/', label: 'More', icon: 'more', on: path.startsWith('/more') },
+    { href: '/more/', label: 'More', icon: 'more', on: ['/more', '/duty', '/leave', '/protocols', '/backup', '/personnel', '/users', '/settings', '/account', '/notifications'].some((p) => path.startsWith(p)) },
   ];
   const showFab = canAdd && !path.startsWith('/patients') && !path.startsWith('/discharge');
   return (

@@ -369,7 +369,40 @@ do $$ declare n int; begin
   if not exists (select 1 from public.workflow_logs where workflow = 'daily-digest') then raise exception 'digest not logged'; end if;
 end $$;
 
--- 15. audit trail was written
+-- 15. duty reports, leave, protocols
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+insert into public.duty_reports (unit_id, duty_date, shift, handover) select unit6, current_date, 'night', 'Bed 3 to watch drain output' from ctx;
+reset role;
+do $$ begin if not exists (select 1 from public.notifications where title = 'Duty report to review') then raise exception 'no duty notification'; end if; end $$;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+select pg_temp.expect_error($q$update public.duty_reports set status = 'reviewed'$q$, 'duty.review');
+insert into public.leave_requests (unit_id, kind, from_date, to_date, reason) select unit6, 'casual', current_date + 3, current_date + 4, 'Family function' from ctx;
+select pg_temp.expect_error($q$update public.leave_requests set status = 'approved'$q$, 'leave.approve');
+select pg_temp.expect_error($q$insert into public.protocols (unit_id, category, title, body) select unit6, 'antibiotics', 'Prophylaxis', 'Cefazolin 2 g' from ctx$q$, 'row-level security');
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000b2');
+update public.duty_reports set status = 'reviewed', review_note = 'Seen' where shift = 'night';
+update public.leave_requests set status = 'approved', decision_note = 'Arrange cover' where reason = 'Family function';
+insert into public.protocols (unit_id, category, title, body) select unit6, 'antibiotics', 'Surgical prophylaxis', 'Cefazolin 2 g IV within 60 min of incision' from ctx;
+update public.protocols set body = 'Cefazolin 2 g IV within 60 min of incision; repeat after 4 h' where title = 'Surgical prophylaxis';
+do $$ begin
+  if (select reviewed_by from public.duty_reports where shift = 'night') is null then raise exception 'review not stamped'; end if;
+  if (select version from public.protocols where title = 'Surgical prophylaxis') <> 2 then raise exception 'version not bumped'; end if;
+end $$;
+reset role;
+do $$ begin if not exists (select 1 from public.notifications where title = 'Leave approved') then raise exception 'no leave decision notification'; end if; end $$;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+update public.duty_reports set handover = 'changed' where shift = 'night';
+do $$ begin if exists (select 1 from public.duty_reports where handover = 'changed') then raise exception 'reviewed report was changed'; end if; end $$;
+do $$ begin if (select count(*) from public.protocols) <> 1 then raise exception 'PG cannot read protocols'; end if; end $$;
+reset role;
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000f6');
+insert into public.leave_requests (unit_id, kind, from_date, to_date) select unit6, 'medical', current_date, current_date from ctx;
+do $$ begin if (select count(*) from public.leave_requests) <> 2 then raise exception 'intern should see own pending and approved leave'; end if; end $$;
+select pg_temp.expect_error($q$select 1 from public.duty_reports limit 1; insert into public.duty_reports (unit_id, duty_date, shift, handover) select unit6, current_date, 'day', 'x' from ctx$q$, 'row-level security');
+reset role;
+
+-- 16. audit trail was written
 do $$ begin
   if (select count(*) from public.audit_logs where table_name = 'ward_round_entries') < 3 then raise exception 'audit missing'; end if;
 end $$;
