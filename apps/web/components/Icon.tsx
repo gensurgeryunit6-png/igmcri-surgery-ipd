@@ -17,6 +17,10 @@ const P: Record<string, string> = {
   back: 'M15 5l-7 7 7 7',
   print: 'M7 9V3h10v6M7 17H4v-7h16v7h-3M7 14h10v7H7z',
   logout: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10',
+  stetho: 'M6 3v6a4 4 0 0 0 8 0V3M10 13v3a5 5 0 0 0 10 0v-2M20 12a2 2 0 1 0 0-.01',
+  homeRing: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 16a4 4 0 1 0-4-4',
+  download: 'M12 3v12M7 10l5 5 5-5M5 21h14',
+  more: 'M9 6h12M9 12h12M9 18h12M4 6h.01M4 12h.01M4 18h.01',
 };
 
 export function Icon({ name, size = 24, color = 'currentColor' }: { name: keyof typeof P | string; size?: number; color?: string }) {
