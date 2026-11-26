@@ -9,11 +9,8 @@ import { Icon } from '@/components/Icon';
 import { roleName } from '@/components/Shell';
 import { InstallApp } from '@/components/InstallApp';
 
-type Tile = { href: string; label: string; icon: string; perm?: string; badge?: number; external?: boolean };
 
 // The existing OPD Minor OT Manager, kept as it is and opened from here.
-const OPD_MINOR_OT_URL = 'https://gensurgeryunit6-png.github.io/minor-ot-manager/mobile2.html?v=18';
-type Group = { title: string; tiles: Tile[] };
 
 /** Home: unit, date, user, notifications and pending tasks on top; modules below in groups.
  *  A module appears only once it is finished, and only if the person's role allows it. */
@@ -69,30 +66,6 @@ export default function Home() {
   if (s.can('ot.prepare') && d?.preopPending) tasks.push({ n: d.preopPending, text: 'booked patients with pre-op work-up pending', href: '/preop/' });
   if (s.can('ot.prepare') && d?.toCall) tasks.push({ n: d.toCall, text: 'waiting-list patients not called yet', href: '/waiting/' });
 
-  const groups: Group[] = [
-    { title: 'Clinical', tiles: [
-      { href: '/opd/', label: 'OPD', icon: 'opd' },
-      { href: '/patients/?new=1', label: 'New patient', icon: 'addUser', perm: 'patient.write' },
-      { href: '/census/', label: 'Inpatient', icon: 'bed' },
-      { href: '/rounds/', label: 'Ward rounds', icon: 'rounds', badge: s.can('round.write') ? c?.rounds_pending : undefined },
-      { href: '/verify/', label: 'Review rounds', icon: 'rounds', perm: 'round.verify', badge: toVerify || undefined },
-      { href: '/tasks/', label: 'Tasks', icon: 'census', badge: d?.myTasks || undefined },
-      { href: '/patients/', label: 'Patient search', icon: 'patients' },
-    ] },
-    { title: 'Operation theatre', tiles: [
-      { href: '/waiting/', label: 'Waiting list', icon: 'patients', badge: d?.waiting || undefined },
-      { href: '/preop/', label: 'Pre-op work-up', icon: 'census', badge: d?.preopPending || undefined },
-      { href: '/ot/', label: 'OT list generator', icon: 'ot' },
-      { href: '/ot/?s=endoscopy', label: 'Endoscopy', icon: 'scope' },
-      { href: OPD_MINOR_OT_URL, label: 'OPD minor OT', icon: 'minor', external: true },
-    ] },
-    { title: 'Administration', tiles: [
-      { href: '/personnel/', label: 'Unit personnel', icon: 'team' },
-      { href: '/reports/', label: 'Downloads', icon: 'reports', perm: 'report.generate' },
-      { href: '/more/', label: 'More', icon: 'team' },
-    ] },
-  ];
-
   return (
     <div className="stack">
       <div className="home-top">
@@ -145,29 +118,18 @@ export default function Home() {
 
       <InstallApp />
 
-      {groups.map((g) => {
-        const tiles = g.tiles.filter((t) => !t.perm || s.can(t.perm));
-        if (!tiles.length) return null;
-        return (
-          <section key={g.title} className="stack" style={{ gap: 8 }}>
-            <h3 style={{ margin: 0 }}>{g.title}</h3>
-            <div className="launcher">
-              {tiles.map((t) => t.external ? (
-                <a key={t.label} href={t.href} target="_blank" rel="noopener" className="tile">
-                  <span className="tile-icon"><Icon name={t.icon} size={28} /></span>
-                  <span className="tile-label">{t.label}</span>
-                </a>
-              ) : (
-                <Link key={t.label} href={t.href} className="tile">
-                  {!!t.badge && <span className="tile-badge">{t.badge}</span>}
-                  <span className="tile-icon"><Icon name={t.icon} size={28} /></span>
-                  <span className="tile-label">{t.label}</span>
-                </Link>
-              ))}
-            </div>
-          </section>
-        );
-      })}
+      <div className="bigbtns">
+        <Link href="/clinical/" className="bigbtn">
+          <span className="tile-icon"><Icon name="stetho" size={30} /></span>
+          <span><b>Clinical</b><small>OPD · Inpatients · Ward rounds · Tasks</small></span>
+          {!!((s.can('round.write') ? c?.rounds_pending ?? 0 : 0) + (d?.myTasks ?? 0) + toVerify) && <span className="tile-badge">{(s.can('round.write') ? c?.rounds_pending ?? 0 : 0) + (d?.myTasks ?? 0) + toVerify}</span>}
+        </Link>
+        <Link href="/theatre/" className="bigbtn">
+          <span className="tile-icon"><Icon name="ot" size={30} /></span>
+          <span><b>Operation theatre</b><small>Waiting list · Pre-op · OT lists · Endoscopy</small></span>
+          {!!d?.preopPending && <span className="tile-badge">{d.preopPending}</span>}
+        </Link>
+      </div>
     </div>
   );
 }

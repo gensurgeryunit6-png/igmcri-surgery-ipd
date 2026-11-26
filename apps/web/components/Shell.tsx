@@ -10,7 +10,7 @@ import { Icon } from './Icon';
 const TITLES: [string, string][] = [
   ['/rounds', 'Ward rounds'], ['/round', 'Ward round'], ['/verify', 'Review rounds'], ['/reports', 'Downloads'],
   ['/census', 'Inpatients'], ['/wards', 'Ward board'], ['/patients', 'Patients'], ['/patient', 'Patient'],
-  ['/users', 'User management'], ['/more', 'More'], ['/notifications', 'Notifications'], ['/settings', 'Wards and beds'], ['/discharge', 'Discharge summary'], ['/saved-reports', 'Saved morning reports'], ['/account', 'My account'], ['/personnel', 'Unit personnel'], ['/opd-visit', 'OPD visit'], ['/opd', 'OPD'], ['/waiting', 'Waiting list'], ['/booking', 'Booking'], ['/ot-list', 'OT list'], ['/ot', 'OT lists'], ['/preop', 'Pre-op work-up'], ['/tasks', 'Tasks'],
+  ['/users', 'User management'], ['/more', 'More'], ['/notifications', 'Notifications'], ['/settings', 'Wards and beds'], ['/discharge', 'Discharge summary'], ['/saved-reports', 'Saved morning reports'], ['/account', 'My account'], ['/personnel', 'Unit personnel'], ['/opd-visit', 'OPD visit'], ['/opd', 'OPD'], ['/waiting', 'Waiting list'], ['/booking', 'Booking'], ['/ot-list', 'OT list'], ['/ot', 'OT lists'], ['/preop', 'Pre-op work-up'], ['/tasks', 'Tasks'], ['/clinical', 'Clinical'], ['/theatre', 'Operation theatre'],
 ];
 const PUBLIC_PATHS = ['/login', '/reset'];
 
@@ -47,14 +47,46 @@ export function Shell({ children }: { children: ReactNode }) {
         )}
         <div className="appbar-actions">
           {!path.startsWith('/patients') && <Link className="icon-btn" href="/patients/" aria-label="Search patients"><Icon name="search" /></Link>}
-          {!isHome && <Link className="icon-btn home" href="/" aria-label="Home"><Icon name="home" /></Link>}
           {isHome && <Link className="icon-btn" href="/account/" aria-label="My account"><Icon name="user" /></Link>}
         </div>
       </header>
       <main className="screen">
         {!s.unit ? <NoRole /> : children}
       </main>
+      {s.unit && <Dock path={path} canAdd={s.can('patient.write')} />}
     </div>
+  );
+}
+
+/** Bottom dock: Home, Clinical, Theatre, Downloads, More; floating + to register a new patient. */
+function Dock({ path, canAdd }: { path: string; canAdd: boolean }) {
+  const items = [
+    { href: '/', label: 'Home', icon: 'homeRing', on: path === '/' },
+    { href: '/clinical/', label: 'Clinical', icon: 'stetho', on: ['/clinical', '/opd', '/census', '/wards', '/round', '/verify', '/tasks', '/patient', '/discharge'].some((p) => path.startsWith(p)) },
+    { href: '/theatre/', label: 'Theatre', icon: 'ot', on: ['/theatre', '/waiting', '/booking', '/preop', '/ot'].some((p) => path.startsWith(p)) },
+    { href: '/reports/', label: 'Downloads', icon: 'download', on: path.startsWith('/reports') || path.startsWith('/saved-reports') },
+    { href: '/more/', label: 'More', icon: 'more', on: path.startsWith('/more') },
+  ];
+  const showFab = canAdd && !path.startsWith('/patients') && !path.startsWith('/discharge');
+  return (
+    <>
+      {showFab && (
+        <Link href="/patients/?new=1" className="fab" aria-label="Register new patient">
+          <svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true" strokeWidth="3" strokeLinecap="butt">
+            <path d="M12 3v9" stroke="var(--navy)" /><path d="M12 12h9" stroke="var(--teal)" />
+            <path d="M12 12v9" stroke="var(--teal)" /><path d="M3 12h9" stroke="var(--navy)" />
+          </svg>
+        </Link>
+      )}
+      <nav className="dock" aria-label="Main">
+        {items.map((it) => (
+          <Link key={it.href} href={it.href} className={`dock-item${it.on ? ' on' : ''}`} aria-current={it.on ? 'page' : undefined} aria-label={it.label}>
+            <Icon name={it.icon} size={it.on ? 30 : 27} />
+            <span>{it.label}</span>
+          </Link>
+        ))}
+      </nav>
+    </>
   );
 }
 
