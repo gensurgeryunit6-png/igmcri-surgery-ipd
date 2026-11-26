@@ -355,7 +355,21 @@ do $$ begin
 end $$;
 reset role;
 
--- 14. audit trail was written
+-- 14. in-database automation sends notifications
+update public.investigations set assigned_person_id = (select id from public.unit_personnel where full_name = 'Intern One') where name = 'USG abdomen';
+update public.workflow_events set status = 'pending', attempts = 0 where event_type in ('admission.created','ot_list.finalised','investigation.resulted','investigation.ordered','discharge.started');
+do $$ declare n int; begin
+  n := private.process_workflow_events();
+  if n = 0 then raise exception 'no notifications from events'; end if;
+  if exists (select 1 from public.workflow_events where status in ('pending','failed')) then raise exception 'events left unprocessed: %', (select string_agg(event_type || ':' || coalesce(last_error, ''), '; ') from public.workflow_events where status in ('pending','failed')); end if;
+  if not exists (select 1 from public.notifications where title like '%list final%') then raise exception 'no OT list notification'; end if;
+  if not exists (select 1 from public.notifications where title like '%Result%') then raise exception 'no result notification'; end if;
+  if not exists (select 1 from public.notifications where title like 'Test to follow up%') then raise exception 'no follow-up notification'; end if;
+  perform private.daily_digest(); perform private.weekly_reminders();
+  if not exists (select 1 from public.workflow_logs where workflow = 'daily-digest') then raise exception 'digest not logged'; end if;
+end $$;
+
+-- 15. audit trail was written
 do $$ begin
   if (select count(*) from public.audit_logs where table_name = 'ward_round_entries') < 3 then raise exception 'audit missing'; end if;
 end $$;

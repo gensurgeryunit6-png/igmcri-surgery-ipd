@@ -10,7 +10,7 @@ import { Icon } from './Icon';
 const TITLES: [string, string][] = [
   ['/rounds', 'Ward rounds'], ['/round', 'Ward round'], ['/verify', 'Review rounds'], ['/reports', 'Downloads'],
   ['/census', 'Inpatients'], ['/wards', 'Ward board'], ['/patients', 'Patients'], ['/patient', 'Patient'],
-  ['/users', 'User management'], ['/more', 'More'], ['/notifications', 'Notifications'], ['/settings', 'Wards and beds'], ['/discharge', 'Discharge summary'], ['/saved-reports', 'Saved morning reports'], ['/account', 'My account'], ['/personnel', 'Unit personnel'], ['/opd-visit', 'OPD visit'], ['/opd', 'OPD'], ['/waiting', 'Waiting list'], ['/booking', 'Booking'], ['/ot-list', 'OT list'], ['/ot', 'OT lists'], ['/preop', 'Pre-op work-up'], ['/tasks', 'Tasks'], ['/clinical', 'Clinical'], ['/theatre', 'Operation theatre'],
+  ['/users', 'User management'], ['/more', 'More'], ['/notifications', 'Notifications'], ['/settings', 'Wards and beds'], ['/discharge', 'Discharge summary'], ['/saved-reports', 'Saved morning reports'], ['/account', 'My account'], ['/personnel', 'Unit personnel'], ['/opd-visit', 'OPD visit'], ['/opd', 'OPD'], ['/waiting', 'Waiting list'], ['/booking', 'Booking'], ['/ot-list', 'OT list'], ['/ot', 'OT lists'], ['/preop', 'Pre-op work-up'], ['/tasks', 'Tasks'], ['/clinical', 'Clinical'], ['/backup', 'Backup'], ['/theatre', 'Operation theatre'],
 ];
 const PUBLIC_PATHS = ['/login', '/reset'];
 
