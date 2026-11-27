@@ -17,6 +17,7 @@ export default function MorePage() {
     { href: '/users/', label: 'User management', icon: 'team', perm: 'users.manage', note: 'Give or remove access, set roles' },
     { href: '/settings/', label: 'Wards and beds', icon: 'bed', perm: 'settings.manage', note: 'Ward names, beds, morning report time' },
     { href: '/saved-reports/', label: 'Saved morning reports', icon: 'reports', perm: 'report.generate', note: 'Ward reports saved each morning' },
+    { href: '/help/', label: 'Help', icon: 'reports', note: 'How to use the app, by role' },
     { href: '/account/', label: 'My account', icon: 'user', note: 'Your profile, role and sign out' },
   ].filter((i) => !i.perm || s.can(i.perm));
   return (
