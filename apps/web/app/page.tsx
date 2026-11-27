@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useLive, must, LIVE_TABLES, type Census } from '@/lib/data';
 import { todayLabel } from '@/lib/format';
 import { todayIst } from '@/lib/workflow';
+import { SetupChecklist } from '@/components/SetupChecklist';
 import { Icon } from '@/components/Icon';
 import { roleName } from '@/components/Shell';
 import { InstallApp } from '@/components/InstallApp';
@@ -125,6 +126,7 @@ export default function Home() {
 
       <InstallApp />
 
+      <SetupChecklist />
       <div className="bigbtns">
         <Link href="/clinical/" className="bigbtn">
           <span className="tile-icon"><Icon name="stetho" size={30} /></span>
