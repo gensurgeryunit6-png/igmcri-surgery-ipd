@@ -65,7 +65,7 @@ export default function Home() {
   if (s.can('round.verify') && toVerify) tasks.push({ n: toVerify, text: 'round notes to review', href: '/verify/' });
   if (s.can('round.write') && mine.length && dueMine) tasks.push({ n: dueMine, text: 'of your patients need today\'s round', href: '/rounds/' });
   else if (s.can('round.write') && c?.rounds_pending) tasks.push({ n: c.rounds_pending, text: 'patients need today\'s round', href: '/rounds/' });
-  if (c?.critical) tasks.push({ n: c.critical, text: 'critical patients', href: '/census/' });
+  if (c?.critical) tasks.push({ n: c.critical, text: 'critical patients', href: '/census/?k=critical' });
   const d = live.data;
   if (d?.myTasks) tasks.push({ n: d.myTasks, text: 'tasks assigned to you', href: '/tasks/' });
   if (d?.dutyToReview) tasks.push({ n: d.dutyToReview, text: 'duty reports to review', href: '/duty/' });
@@ -89,10 +89,10 @@ export default function Home() {
           </Link>
         </div>
         <div className="today" style={{ background: 'transparent', padding: '10px 0 0' }}>
-          <div><b>{c?.total_admitted ?? '–'}</b><span>Inpatients</span></div>
-          <div className={c?.rounds_pending ? 'alert' : ''}><b>{c?.rounds_pending ?? '–'}</b><span>Rounds due</span></div>
-          <div className={c?.critical ? 'alert' : ''}><b>{c?.critical ?? '–'}</b><span>Critical</span></div>
-          <div><b>{c?.new_admissions ?? '–'}</b><span>New today</span></div>
+          <Link href="/census/" style={{ color: 'inherit' }}><b>{c?.total_admitted ?? '–'}</b><span>Inpatients</span></Link>
+          <Link href="/census/?k=rounds" style={{ color: 'inherit' }} className={c?.rounds_pending ? 'alert' : ''}><b>{c?.rounds_pending ?? '–'}</b><span>Rounds due</span></Link>
+          <Link href="/census/?k=critical" style={{ color: 'inherit' }} className={c?.critical ? 'alert' : ''}><b>{c?.critical ?? '–'}</b><span>Critical</span></Link>
+          <Link href="/census/?k=new" style={{ color: 'inherit' }}><b>{c?.new_admissions ?? '–'}</b><span>New today</span></Link>
         </div>
       </div>
 
@@ -100,12 +100,12 @@ export default function Home() {
         <div className="small" style={{ fontWeight: 700, color: 'var(--navy)', marginBottom: 6 }}>Today in the unit</div>
         <div className="countgrid">
           {[
-            { n: c?.male_ward, l: 'Male ward', h: '/census/' }, { n: c?.female_ward, l: 'Female ward', h: '/census/' },
-            { n: c?.special_ward, l: 'Special ward', h: '/census/' }, { n: d?.preopPending, l: 'Pre-op pending', h: '/preop/' },
-            { n: d?.major, l: 'Major OT today', h: '/ot/' }, { n: d?.minor, l: 'Minor OT today', h: '/ot/?s=minor' },
-            { n: d?.endo, l: 'Endoscopy today', h: '/ot/?s=endoscopy' }, { n: c?.postoperative, l: 'Post-op', h: '/census/' },
+            { n: c?.male_ward, l: 'Male ward', h: '/census/?k=male' }, { n: c?.female_ward, l: 'Female ward', h: '/census/?k=female' },
+            { n: c?.special_ward, l: 'Special ward', h: '/census/?k=special' }, { n: d?.preopPending, l: 'Pre-op pending', h: '/preop/' },
+            { n: d?.major, l: 'Major OT today', h: '/ot-today/?s=major' }, { n: d?.minor, l: 'Minor OT today', h: '/ot-today/?s=minor' },
+            { n: d?.endo, l: 'Endoscopy today', h: '/ot-today/?s=endoscopy' }, { n: c?.postoperative, l: 'Post-op', h: '/census/?k=postop' },
             { n: d?.pendingTests, l: 'Reports pending', h: '/tasks/?v=tests' }, { n: d?.waiting, l: 'Waiting list', h: '/waiting/' },
-            { n: c?.planned_discharge, l: 'Planned discharge', h: '/census/' }, { n: d?.myTasks, l: 'My tasks', h: '/tasks/' },
+            { n: c?.planned_discharge, l: 'Planned discharge', h: '/census/?k=discharge' }, { n: d?.myTasks, l: 'My tasks', h: '/tasks/' },
           ].map((x) => <Link key={x.l} href={x.h} className="count"><b>{x.n ?? '–'}</b><span>{x.l}</span></Link>)}
         </div>
       </div>

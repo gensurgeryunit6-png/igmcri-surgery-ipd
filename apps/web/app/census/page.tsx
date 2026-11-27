@@ -1,68 +1,68 @@
 'use client';
+import { Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useSession } from '@/lib/session';
 import { supabase } from '@/lib/supabase';
-import { useLive, must, LIVE_TABLES, type Census, type Inpatient, type Ward } from '@/lib/data';
+import { useLive, must, LIVE_TABLES, type Inpatient, type Ward } from '@/lib/data';
 import { todayLabel, fmtDate, ageSex, fmtDateTime } from '@/lib/format';
 import { StatusBadge } from '@/components/ui';
 
-export default function CensusPage() {
+/** Lists behind each count on the home screen. ?k= picks the list; no key = all inpatients. */
+const LISTS: Record<string, { title: string; test: (p: Inpatient, today: string) => boolean }> = {
+  all: { title: 'All inpatients', test: () => true },
+  male: { title: 'Male Surgical Ward', test: (p) => p.ward_kind === 'male' },
+  female: { title: 'Female Surgical Ward', test: (p) => p.ward_kind === 'female' },
+  special: { title: 'Special Ward', test: (p) => p.ward_kind === 'special' },
+  other: { title: 'Emergency and other beds', test: (p) => p.ward_kind === 'emergency' || p.ward_kind === 'other' },
+  nobed: { title: 'Admitted without a bed', test: (p) => !p.bed_id },
+  new: { title: 'Admitted today', test: (p, t) => new Date(p.admitted_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }) === t },
+  rounds: { title: 'Rounds due today', test: (p) => !p.rounds_today },
+  critical: { title: 'Critical', test: (p) => p.last_status === 'critical' },
+  postop: { title: 'Post-operative', test: (p) => !!p.is_postop },
+  surgery: { title: 'Awaiting surgery', test: (p) => !!p.awaiting_surgery },
+  discharge: { title: 'Planned for discharge', test: (p, t) => !!p.planned_discharge_on && p.planned_discharge_on <= t },
+};
+
+export default function CensusPage() { return <Suspense><CensusList /></Suspense>; }
+
+function CensusList() {
+  const k = useSearchParams().get('k') ?? 'all';
+  const list = LISTS[k] ?? LISTS.all;
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   const s = useSession();
   const unitId = s.unit?.id;
   const q = useLive(async () => {
-    const [c, pts, wards] = await Promise.all([
-      must(supabase.from('v_census_today').select('*').eq('unit_id', unitId!).maybeSingle()),
+    const [pts, wards] = await Promise.all([
       must(supabase.from('v_inpatients').select('*').eq('unit_id', unitId!).order('ward_sort').order('bed_sort')),
       must(supabase.from('wards').select('id, code, name, kind, sort_order').eq('unit_id', unitId!).eq('active', true).order('sort_order')),
     ]);
-    return { c: c as Census | null, pts: pts as Inpatient[], wards: wards as Ward[] };
+    return { pts: pts as Inpatient[], wards: wards as Ward[] };
   }, LIVE_TABLES, [unitId]);
 
-  const c = q.data?.c;
-  const pts = q.data?.pts ?? [];
+  const pts = (q.data?.pts ?? []).filter((p) => list.test(p, today));
   const groups = [
     ...(q.data?.wards ?? []).map((w) => ({ key: w.id, name: w.name, rows: pts.filter((p) => p.ward_id === w.id) })),
     { key: 'none', name: 'No bed allocated', rows: pts.filter((p) => !p.bed_id) },
-  ].filter((g) => g.rows.length || g.key !== 'none');
-
-  const measures: [string, number | undefined, boolean?][] = [
-    ['Total admitted', c?.total_admitted],
-    ['Male Surgical Ward', c?.male_ward],
-    ['Female Surgical Ward', c?.female_ward],
-    ['Special Ward', c?.special_ward],
-    ['Emergency / other beds', c?.other_beds],
-    ['New admissions', c?.new_admissions],
-    ['Postoperative', c?.postoperative],
-    ['Critical', c?.critical, true],
-    ['Awaiting surgery', c?.awaiting_surgery],
-    ['Planned for discharge', c?.planned_discharge],
-    ['Discharges completed', c?.discharged_today],
-  ];
+  ].filter((g) => g.rows.length);
 
   return (
     <div className="stack">
       <div className="print-head">
         <b>Indira Gandhi Medical College &amp; Research Institute, Puducherry</b>
-        Department of General Surgery · {s.unit?.name} · Today&apos;s Inpatient Census · {todayLabel()}
+        Department of General Surgery · {s.unit?.name} · {list.title} · {todayLabel()}
       </div>
       <div className="spread no-print">
-        <div className="muted small">{todayLabel()} · {s.unit?.name} · updates live</div>
-        <button className="ghost" onClick={() => window.print()}>Print A4</button>
+        <h2 style={{ margin: 0 }}>{list.title} · {q.data ? pts.length : '…'}</h2>
+        <button className="ghost" style={{ padding: '6px 12px' }} onClick={() => window.print()}>Print</button>
       </div>
+      {k !== 'all' && <Link className="small no-print" href="/census/">All inpatients ({q.data?.pts.length ?? '…'}) →</Link>}
+      {q.data && pts.length === 0 && <p className="muted">No patients in this list.</p>}
       {q.error && <div className="msg err">{q.error}</div>}
-
-      <div className="grid g3">
-        {measures.map(([label, n, alert]) => (
-          <div key={label} className={`stat ${label === 'Total admitted' ? 'lead' : ''} ${alert && n ? 'alert' : ''}`}>
-            <div className="n">{n ?? '–'}</div><div className="l">{label}</div>
-          </div>
-        ))}
-        {!!c?.no_bed && <div className="stat alert"><div className="n">{c.no_bed}</div><div className="l">Admitted without a bed</div></div>}
-      </div>
 
       {groups.map((g) => (
         <div key={g.key} className="stack" style={{ gap: 8 }}>
-          <div className="spread"><h2 style={{ margin: 0 }}>{g.name}</h2><span className="badge navy">{g.rows.length}</span></div>
+          {groups.length > 1 && <div className="spread"><h3 style={{ margin: 0 }}>{g.name}</h3><span className="badge navy">{g.rows.length}</span></div>}
           {g.rows.length === 0 ? <p className="muted small" style={{ margin: 0 }}>No patients.</p> : (
             <>
             <div className="mobile-list">
@@ -107,7 +107,7 @@ export default function CensusPage() {
           )}
         </div>
       ))}
-      <p className="muted small">All figures are counted live from the database. Clinical status is from each patient&apos;s latest ward-round entry.</p>
+      <p className="muted small">Updates live. Clinical status is from each patient&apos;s latest ward round.</p>
     </div>
   );
 }
